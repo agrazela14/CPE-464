@@ -32,16 +32,14 @@ int main(int argc, char **argv) {
         pcap_close(traceFile);
         return -2;
     }
-
     while (result > 0) {
-        printf("Packet Number %d ", packetNum++);
-        result = readPacket(traceFile);
-    } 
+        result = readPacket(traceFile, packetNum++);
+    }
     return 0;
 }
 
 
-int readPacket(pcap_t *traceFile) {
+int readPacket(pcap_t *traceFile, int num) {
     struct pcap_pkthdr *header;
     const unsigned char *data;
     int res = pcap_next_ex(traceFile, &header, &data);
@@ -49,8 +47,8 @@ int readPacket(pcap_t *traceFile) {
     short etherType;
 
     if (res > 0) {
-        char *postEther;
-        printf("  Packet Len: %d\n\n", header->len);
+        char postEther[1540];
+        printf("Packet number: %d  Packet Len: %d\n\n", num, header->len);
 
         printf("\tEthernet Header\n");
         mac = ether_ntoa((void *)data);
@@ -89,7 +87,7 @@ void processARP(char *packet) {
     memcpy(THA.ether_addr_octet, packet += sizeof(struct in_addr), sizeof(struct ether_addr));
     memcpy(&(TPA.s_addr), packet += sizeof(struct ether_addr), sizeof(struct in_addr));
 
-    printf("\tARP Header\n");
+    printf("\tARP header\n");
 
     if (operation == 1) {
         printf("\t\tOpcode: Request\n");
@@ -103,7 +101,7 @@ void processARP(char *packet) {
     printf("\t\tSender MAC: %s\n", ether_ntoa(&SHA));
     printf("\t\tSender IP: %s\n", inet_ntoa(SPA));
     printf("\t\tTarget MAC: %s\n", ether_ntoa(&THA));
-    printf("\t\tTarget IP: %s\n", inet_ntoa(TPA));
+    printf("\t\tTarget IP: %s\n\n", inet_ntoa(TPA));
 }
 
 void processIP(char *packet) {
