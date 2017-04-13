@@ -9,7 +9,15 @@
 #define IP4TYPE 0x0800
 #define ARPTYPE 0x0806
 
+/***************
+* REMINDER:
+* Bytes are 8 bits, you fool 
+***************/
+
 int main(int argc, char **argv) {
+    int packetNum = 1;
+
+    //printf("%d %d\n", sizeof(struct ether_addr), sizeof(struct in_addr));
     if (argc < 2) {
         fprintf(stderr, "Please provide a path to a .pcap file to read");
         return -1; 
@@ -26,6 +34,7 @@ int main(int argc, char **argv) {
     }
 
     while (result > 0) {
+        printf("Packet Number %d ", packetNum++);
         result = readPacket(traceFile);
     } 
     return 0;
@@ -41,8 +50,8 @@ int readPacket(pcap_t *traceFile) {
 
     if (res > 0) {
         char *postEther;
-        printf("Caplen:%d   Len:%d\n", header->caplen, header->len);
-        
+        printf("  Packet Len: %d\n\n", header->len);
+
         printf("\tEthernet Header\n");
         mac = ether_ntoa((void *)data);
         printf("\t\tDest MAC: %s\n", mac); 
@@ -64,7 +73,7 @@ int readPacket(pcap_t *traceFile) {
 }
 
 void processARP(char *packet) {
-    uint8_t operation = ntohs((short)*(packet += 6 * sizeof(short))); 
+    uint16_t operation; 
 
     struct ether_addr SHA;
     struct in_addr SPA;
@@ -72,19 +81,21 @@ void processARP(char *packet) {
     struct ether_addr THA;
     struct in_addr TPA;
 
-    memcpy(&SHA, packet += 2, sizeof(struct ether_addr));
-    memcpy(&SPA, packet += sizeof(struct ether_addr), sizeof(struct in_addr));
+    memcpy(&operation, packet += 6, 2);
+    operation = ntohs(operation);
+    memcpy(SHA.ether_addr_octet, packet += 2, sizeof(struct ether_addr));
+    memcpy(&(SPA.s_addr), packet += sizeof(struct ether_addr), sizeof(struct in_addr));
 
-    memcpy(&THA, packet += sizeof(struct in_addr), sizeof(struct ether_addr));
-    memcpy(&TPA, packet += sizeof(struct ether_addr), sizeof(struct in_addr));
+    memcpy(THA.ether_addr_octet, packet += sizeof(struct in_addr), sizeof(struct ether_addr));
+    memcpy(&(TPA.s_addr), packet += sizeof(struct ether_addr), sizeof(struct in_addr));
 
     printf("\tARP Header\n");
 
     if (operation == 1) {
-        printf("\t\tOperation: request\n");
+        printf("\t\tOpcode: Request\n");
     }
     else if (operation == 2) {
-        printf("\t\tOperation: reply\n");
+        printf("\t\tOpcode: Reply\n");
     }
     else {
         printf("\t\tOpcode: %hu\n", operation);
