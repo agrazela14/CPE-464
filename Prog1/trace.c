@@ -6,6 +6,9 @@
 #include <arpa/inet.h>
 #include "trace.h"
 
+#define IP4TYPE 0x0800
+#define ARPTYPE 0x0806
+
 int main(int argc, char **argv) {
     if (argc < 2) {
         fprintf(stderr, "Please provide a path to a .pcap file to read");
@@ -17,15 +20,14 @@ int main(int argc, char **argv) {
     int result = 1;
 
     if (traceFile == NULL) {
-        memcpy(errBuf, "Hello", 5);
-        fprintf(stderr, "The filename appears to have been invalid, err: \n%s\n", errBuf);
+        fprintf(stderr, "The filename appears to have been invalid, error:\n%s\n", errBuf);
         pcap_close(traceFile);
         return -2;
     }
 
     while (result > 0) {
-        result = readPacket(traceFile);    
-    }     
+        result = readPacket(traceFile);
+    } 
     return 0;
 }
 
@@ -33,28 +35,66 @@ int main(int argc, char **argv) {
 int readPacket(pcap_t *traceFile) {
     struct pcap_pkthdr *header;
     const unsigned char *data;
-    //const char *outStr;
-    //char *hostName;
     int res = pcap_next_ex(traceFile, &header, &data);
     char *mac;
-    /*
-    //memcpy(destMac, data, 12);
-    for (int i = 0; i < 12; i += 2) {
-        memset((destMac + i), ntohs(*(data + i)), 2);
-    }
-    const struct ether_addr *destEthernet = (void *)data;
-    const struct ether_addr *srcEthernet = (void *)(data + 12);
-    */
-    //ether_line(outStr, ethernet, hostName);
+    short etherType;
 
     if (res > 0) {
+        char *postEther;
         printf("Caplen:%d   Len:%d\n", header->caplen, header->len);
-
+        
+        printf("\tEthernet Header\n");
         mac = ether_ntoa((void *)data);
-        printf("\tDest MAC: %s\n", mac); 
+        printf("\t\tDest MAC: %s\n", mac); 
         mac = ether_ntoa((void *)(data + sizeof(struct ether_addr)));
-        printf("\tSource MAC: %s\n", mac); 
-
+        printf("\t\tSource MAC: %s\n", mac); 
+        memcpy(&etherType, (data + 2 * sizeof(struct ether_addr)), 2);
+        etherType = ntohs(etherType);
+        memcpy(postEther, data + (2 * sizeof(struct ether_addr) + 2), header->len - (2 * sizeof(struct ether_addr) + 2)); 
+        if (etherType == ARPTYPE) {
+            printf("\t\tType: ARP\n\n");
+            processARP(postEther);
+        }
+        else if (etherType == IP4TYPE) {
+            printf("\t\tType: IP\n\n");
+            processIP(postEther);
+        }
     } 
     return res;
+}
+
+void processARP(char *packet) {
+    uint8_t operation = ntohs((short)*(packet += 6 * sizeof(short))); 
+
+    struct ether_addr SHA;
+    struct in_addr SPA;
+
+    struct ether_addr THA;
+    struct in_addr TPA;
+
+    memcpy(&SHA, packet += 2, sizeof(struct ether_addr));
+    memcpy(&SPA, packet += sizeof(struct ether_addr), sizeof(struct in_addr));
+
+    memcpy(&THA, packet += sizeof(struct in_addr), sizeof(struct ether_addr));
+    memcpy(&TPA, packet += sizeof(struct ether_addr), sizeof(struct in_addr));
+
+    printf("\tARP Header\n");
+
+    if (operation == 1) {
+        printf("\t\tOperation: request\n");
+    }
+    else if (operation == 2) {
+        printf("\t\tOperation: reply\n");
+    }
+    else {
+        printf("\t\tOpcode: %hu\n", operation);
+    }
+    printf("\t\tSender MAC: %s\n", ether_ntoa(&SHA));
+    printf("\t\tSender IP: %s\n", inet_ntoa(SPA));
+    printf("\t\tTarget MAC: %s\n", ether_ntoa(&THA));
+    printf("\t\tTarget IP: %s\n", inet_ntoa(TPA));
+}
+
+void processIP(char *packet) {
+
 }
