@@ -134,14 +134,14 @@ void processIP(char *packet) {
     memcpy(&(sender.s_addr), packet, 4);
     packet += 4;
     memcpy(&(dest.s_addr), packet, 4);
+    packet += 4;
 
     printf("\tIP Header\n");
     printf("\t\tIP Version: %hu\n", (ver_IHL & 0xF0) >> 4);
     printf("\t\tHeader Len (bytes): %hu\n", (ver_IHL & 0x0F) * 4);
+
     printf("\t\tTOS subfields:\n");
-    /* These are never aything besides 0 in the out files, and I don't know what it means by
-    " bits "
-    */
+    // I don't know what it means by " bits "
     printf("\t\t\tDiffserv bits: 0\n");
     printf("\t\t\tECN bits: 0\n");
     
@@ -158,7 +158,36 @@ void processIP(char *packet) {
 
     printf("\t\tSender IP: %s\n", inet_ntoa(sender)); 
     printf("\t\tDest IP: %s\n\n", inet_ntoa(dest)); 
-     
+
+    if (protocol == UDPPROTOCOL) { 
+        processUDP(packet);
+    }
+    else if(protocol == TCPPROTOCOL) {
+        processTCP(packet, totalLen - (ver_IHL & 0x0F) * 4, sender, dest);
+    }
+}
+
+
+void processUDP(char *packet) {
+
+}
+
+void processTCP(char *packet, uint16_t len, in_addr src, in_addr dest) {
+    char checkSumHandle[len + 12];
+    createPseudoHeader(&checkSumHandle, packet, len, src, dest);
+    uint16_t checksum = in_cksum(checkSumHandle, len + 12);
+
 }
          
+void createPseudoHeader(char **buffer, char *packet, uint16_t len, in_addr src, in_addr dest) {
+    memcpy(*buffer, &(src.s_addr), 4);
+    memcpy((*buffer) + 4, &(dest.s_addr), 4);
+    ((*buffer) + 8) = 0; //reserved 0
+    ((*buffer) + 9) = 6; //protocol, will be 6 for TCP
+    memcpy((*buffer) + 10, &(len), 2);
+    memcpy((*buffer) + 12, packet, len);
+}
+
+
+
 
