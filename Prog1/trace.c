@@ -239,15 +239,14 @@ void processTCP(char *packet, uint16_t len,
     //The "checksum Field" is what we need to print, how do we use the "checksum"
     printf("\t\tChecksum calc: %#04x\n", checksum); 
     printf("\t\tChecksum: (%#04x)\n\n", chkField); 
-
 }
          
 void createPseudoHeader(char **buffer, char *packet, 
  uint16_t len, struct in_addr *src, struct in_addr *dest) {
     memcpy(*buffer, &(src->s_addr), 4);
     memcpy((*buffer) + 4, &(dest->s_addr), 4);
-    *((*buffer) + 8) = 0; //reserved 0
-    *((*buffer) + 9) = 6; //protocol, will be 6 for TCP
+    *((*buffer) + 8) = 0x00; //reserved 0
+    *((*buffer) + 9) = 0x06; //protocol, will be 6 for TCP
     memcpy((*buffer) + 10, &(len), 2);
     memcpy((*buffer) + 12, packet, len);
 }
