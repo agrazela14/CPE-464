@@ -5,6 +5,8 @@
 #include <netinet/ether.h>
 #include <arpa/inet.h>
 #include "trace.h"
+#include "checksum.h"
+
 
 #define IP4TYPE 0x0800
 #define ARPTYPE 0x0806
@@ -124,6 +126,7 @@ void processIP(char *packet) {
     memcpy(&ver_IHL, packet++, 1); 
     memcpy(&DSCP_ECN, packet++, 1);
     memcpy(&totalLen, packet, 2);
+    totalLen = ntohs(totalLen);
     packet += 6;
 
     memcpy(&ttl, packet++, 1);
@@ -163,7 +166,7 @@ void processIP(char *packet) {
         processUDP(packet);
     }
     else if(protocol == TCPPROTOCOL) {
-        processTCP(packet, totalLen - (ver_IHL & 0x0F) * 4, sender, dest);
+        processTCP(packet, totalLen - (ver_IHL & 0x0F) * 4, &sender, &dest);
     }
 }
 
@@ -172,18 +175,79 @@ void processUDP(char *packet) {
 
 }
 
-void processTCP(char *packet, uint16_t len, in_addr src, in_addr dest) {
-    char checkSumHandle[len + 12];
-    createPseudoHeader(&checkSumHandle, packet, len, src, dest);
-    uint16_t checksum = in_cksum(checkSumHandle, len + 12);
+void processTCP(char *packet, uint16_t len, 
+ struct in_addr *source, struct in_addr *destination) {
+    char *checkSumHandle;//[len + 12];
+    createPseudoHeader(&checkSumHandle, packet, len, source, destination);
+    uint16_t checksum = in_cksum((unsigned short *)checkSumHandle, len + 12);
+    uint8_t  offset, flags;
+    uint16_t chkField, src, dest, winSize;
+    uint32_t seqNum, ackNum;
+
+    memcpy(&src, packet, 2);
+    src = ntohs(src);
+    packet += 2;
+    memcpy(&dest, packet, 2);
+    dest = ntohs(dest);
+    packet += 2;
+    memcpy(&seqNum, packet, 4);
+    seqNum = ntohl(seqNum);
+    packet += 4;
+    memcpy(&ackNum, packet, 4);
+    ackNum = ntohl(ackNum);
+    packet += 4;
+    memcpy(&offset, packet, 1);//offset is just the top 4 bits of this
+    //offset = ntohs(offset);
+    packet += 1;
+    memcpy(&flags, packet, 1);
+    packet += 1;
+    memcpy(&winSize, packet, 2);
+    winSize = ntohs(winSize);
+    packet += 2;
+    memcpy(&chkField, packet, 2);
+    chkField = ntohs(chkField);
+    packet += 2;
+     
+    printf("\tTCP Header\n");
+    printf("\t\tSource Port: %u\n", src);
+    printf("\t\tDest Port: %u\n", dest);
+    printf("\t\tSequence Number: %u\n", seqNum);
+    printf("\t\tACK Number: %u\n", ackNum);
+    printf("\t\tData Offset (bytes): %hu\n", (offset >> 4) * 4);
+
+    if (flags & 0x02)
+        printf("\t\tSYN Flag: Yes\n");
+    else 
+        printf("\t\tSYN Flag: No\n");
+
+    if (flags & 0x04)
+        printf("\t\tRST Flag: Yes\n");
+    else 
+        printf("\t\tRST Flag: No\n");
+
+    if (flags & 0x01)
+        printf("\t\tFIN Flag: Yes\n");
+    else 
+        printf("\t\tFIN Flag: No\n");
+
+    if (flags & 0x10)
+        printf("\t\tACK Flag: Yes\n");
+    else 
+        printf("\t\tACK Flag: No\n");
+         
+    printf("\t\tWindow Size: %u\n", winSize);
+    //The "checksum Field" is what we need to print, how do we use the "checksum"
+    printf("\t\tChecksum calc: %#04x\n", checksum); 
+    printf("\t\tChecksum: (%#04x)\n\n", chkField); 
 
 }
          
-void createPseudoHeader(char **buffer, char *packet, uint16_t len, in_addr src, in_addr dest) {
-    memcpy(*buffer, &(src.s_addr), 4);
-    memcpy((*buffer) + 4, &(dest.s_addr), 4);
-    ((*buffer) + 8) = 0; //reserved 0
-    ((*buffer) + 9) = 6; //protocol, will be 6 for TCP
+void createPseudoHeader(char **buffer, char *packet, 
+ uint16_t len, struct in_addr *src, struct in_addr *dest) {
+    memcpy(*buffer, &(src->s_addr), 4);
+    memcpy((*buffer) + 4, &(dest->s_addr), 4);
+    *((*buffer) + 8) = 0; //reserved 0
+    *((*buffer) + 9) = 6; //protocol, will be 6 for TCP
     memcpy((*buffer) + 10, &(len), 2);
     memcpy((*buffer) + 12, packet, len);
 }
