@@ -10,6 +10,7 @@
 
 #define IP4TYPE 0x0800
 #define ARPTYPE 0x0806
+#define ICMPPROTOCOL 0x01
 #define UDPPROTOCOL 0x11
 #define TCPPROTOCOL 0x06
 #define DNSPORT 53 
@@ -120,19 +121,28 @@ void processIP(char *packet) {
     uint8_t ttl;
     uint8_t protocol; 
     uint16_t checkSum;
+    uint16_t calcCheckSum;
+
+    char *packetForCheck = packet;
 
     struct in_addr sender;
     struct in_addr dest;
 
     memcpy(&ver_IHL, packet++, 1); 
     memcpy(&DSCP_ECN, packet++, 1);
+    DSCP_ECN = ntohs(DSCP_ECN);
     memcpy(&totalLen, packet, 2);
     totalLen = ntohs(totalLen);
     packet += 6;
 
     memcpy(&ttl, packet++, 1);
     memcpy(&protocol, packet++, 1);
+
     memcpy(&checkSum, packet, 2);
+    calcCheckSum = ipCheckSumCalc(packetForCheck);
+    checkSum = ntohs(checkSum);
+    calcCheckSum = ntohs(calcCheckSum);
+
     packet += 2;
 
     memcpy(&(sender.s_addr), packet, 4);
@@ -146,10 +156,14 @@ void processIP(char *packet) {
 
     printf("\t\tTOS subfields:\n");
     // I don't know what it means by " bits "
-    printf("\t\t\tDiffserv bits: 0\n");
-    printf("\t\t\tECN bits: 0\n");
+    printf("\t\t\tDiffserv bits: %hu\n", DSCP_ECN & 0xFE);
+    printf("\t\t\tECN bits: %hu\n", DSCP_ECN & 0x01);
     
     printf("\t\tTTL: %hu\n", ttl);
+
+    if (protocol == ICMPPROTOCOL) { 
+        printf("\t\tProtocol: ICMP\n");
+    }
     if (protocol == UDPPROTOCOL) { 
         printf("\t\tProtocol: UDP\n");
     }
@@ -158,11 +172,20 @@ void processIP(char *packet) {
     }
 
     //Do the checksum part later because that's the hardest part
-    printf("\t\tChecksum: Do it later!\n");
+    if (calcCheckSum == 0xFFFF) {
+        printf("\t\tChecksum: Correct (%#04x)\n", checkSum);
+    }
+    else {
+        printf("\t\tChecksum: Incorrect (%#04x)\n", checkSum);
+        printf("\t\tChecksum Calc: %#04x\n", calcCheckSum);
+    }
 
     printf("\t\tSender IP: %s\n", inet_ntoa(sender)); 
     printf("\t\tDest IP: %s\n\n", inet_ntoa(dest)); 
 
+    if (protocol == ICMPPROTOCOL) { 
+        processICMP(packet);
+    }
     if (protocol == UDPPROTOCOL) { 
         processUDP(packet);
     }
@@ -171,6 +194,9 @@ void processIP(char *packet) {
     }
 }
 
+void processICMP(char *packet) {
+
+}
 
 void processUDP(char *packet) {
     uint16_t src, dest, len, chksum;
@@ -201,9 +227,11 @@ void processUDP(char *packet) {
 
 void processTCP(char *packet, uint16_t len, 
  struct in_addr *source, struct in_addr *destination) {
-    char *checkSumHandle;//[len + 12];
-    createPseudoHeader(&checkSumHandle, packet, len, source, destination);
+    char *checkSumHandle = malloc(len + 12);
+    createPseudoHeader(&checkSumHandle, packet, len, &(source->s_addr), &(destination->s_addr));
     uint16_t checksum = in_cksum((unsigned short *)checkSumHandle, len + 12);
+    //checksum = ntohs(checksum);
+    free(checkSumHandle);
     uint8_t  offset, flags;
     uint16_t chkField, src, dest, winSize;
     uint32_t seqNum, ackNum;
@@ -266,15 +294,29 @@ void processTCP(char *packet, uint16_t len,
 }
          
 void createPseudoHeader(char **buffer, char *packet, 
- uint16_t len, struct in_addr *src, struct in_addr *dest) {
-    memcpy(*buffer, &(src->s_addr), 4);
-    memcpy((*buffer) + 4, &(dest->s_addr), 4);
+ uint16_t len, uint32_t *src, uint32_t *dest) {
+    memcpy(*buffer, src, 4);
+    memcpy((*buffer) + 4, dest, 4);
     *((*buffer) + 8) = 0x00; //reserved 0
     *((*buffer) + 9) = 0x06; //protocol, will be 6 for TCP
     memcpy((*buffer) + 10, &(len), 2);
     memcpy((*buffer) + 12, packet, len);
+    *((*buffer) + 28) = 0x0000; //set the checksum field to 0
 }
 
+uint16_t ipCheckSumCalc(char *packet) {
+    uint16_t cur = 0;
+    uint16_t final = 0;
+    uint32_t sum = 0;
+    int ndx = 0;
 
+    for(ndx = 0; ndx < 10; ndx++) {
+        memcpy(&cur, packet, 2);
+        packet += 2;
+        sum += cur;
+    } 
+    final = (sum & 0x0000FFFF) + ((sum & 0xFFFF0000) >> 16);//to take care of the carry
+    return final;
+}
 
 
