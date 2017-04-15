@@ -12,6 +12,7 @@
 #define ARPTYPE 0x0806
 #define UDPPROTOCOL 0x11
 #define TCPPROTOCOL 0x06
+#define DNSPORT 53 
 
 /***************
 * REMINDER:
@@ -172,7 +173,30 @@ void processIP(char *packet) {
 
 
 void processUDP(char *packet) {
+    uint16_t src, dest, len, chksum;
 
+    memcpy(&src, packet, 2);
+    src = ntohs(src);
+    packet += 2;
+    memcpy(&dest, packet, 2);
+    dest = ntohs(dest);
+    packet += 2;
+    memcpy(&len, packet, 2);
+    packet += 2;
+    memcpy(&chksum, packet, 2);
+    packet += 2;
+
+    printf("\tUDP Header\n");
+
+    if (src == DNSPORT) 
+        printf("\t\tSource Port: DNS\n");
+    else
+        printf("\t\tSource Port: %u\n", src);
+
+    if (dest == DNSPORT) 
+        printf("\t\tDest Port: DNS\n\n");
+    else
+        printf("\t\tDest Port: %u\n\n", dest);
 }
 
 void processTCP(char *packet, uint16_t len, 
