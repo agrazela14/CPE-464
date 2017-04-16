@@ -130,7 +130,7 @@ void processIP(char *packet) {
 
     memcpy(&ver_IHL, packet++, 1); 
     memcpy(&DSCP_ECN, packet++, 1);
-    DSCP_ECN = ntohs(DSCP_ECN);
+    //DSCP_ECN = ntohs(DSCP_ECN);
     memcpy(&totalLen, packet, 2);
     totalLen = ntohs(totalLen);
     packet += 6;
@@ -153,32 +153,35 @@ void processIP(char *packet) {
     printf("\tIP Header\n");
     printf("\t\tIP Version: %hu\n", (ver_IHL & 0xF0) >> 4);
     printf("\t\tHeader Len (bytes): %hu\n", (ver_IHL & 0x0F) * 4);
-    printf("\t\tTotal Len (bytes): %u\n", totalLen);
+    //printf("\t\tTotal Len (bytes): %u\n", totalLen);
 
     printf("\t\tTOS subfields:\n");
     // I don't know what it means by " bits "
-    printf("\t\t\tDiffserv bits: %hu\n", DSCP_ECN & 0xFE);
-    printf("\t\t\tECN bits: %hu\n", DSCP_ECN & 0x01);
+    printf("\t\t   Diffserv bits: %hu\n", (DSCP_ECN) >> 2);
+    printf("\t\t   ECN bits: %hu\n", DSCP_ECN & 0x03);
     
     printf("\t\tTTL: %hu\n", ttl);
 
     if (protocol == ICMPPROTOCOL) { 
         printf("\t\tProtocol: ICMP\n");
     }
-    if (protocol == UDPPROTOCOL) { 
+    else if (protocol == UDPPROTOCOL) { 
         printf("\t\tProtocol: UDP\n");
     }
     else if(protocol == TCPPROTOCOL) {
         printf("\t\tProtocol: TCP\n");
     }
+    else {
+        printf("\t\tProtocol: Unknown\n");
+    }
 
     //Do the checksum part later because that's the hardest part
     if (calcCheckSum == 0xFFFF) {
-        printf("\t\tChecksum: Correct (%#04x)\n", checkSum);
+        printf("\t\tChecksum: Correct (0x%04x)\n", checkSum);
     }
     else {
-        printf("\t\tChecksum: Incorrect (%#04x)\n", checkSum);
-        printf("\t\tChecksum Calc: %#04x\n", calcCheckSum);
+        printf("\t\tChecksum: Incorrect (0x%04x)\n", checkSum);
+        //printf("\t\tChecksum Calc: %#04x\n", calcCheckSum);
     }
 
     printf("\t\tSender IP: %s\n", inet_ntoa(sender)); 
@@ -196,7 +199,20 @@ void processIP(char *packet) {
 }
 
 void processICMP(char *packet) {
-
+    uint8_t type;
+    memcpy(&type, packet, 1);
+    //type = ntohs(type);
+    
+    printf("\tICMP Header\n"); 
+    if (type == 0) {
+        printf("\t\tType: Reply\n\n");
+    }
+    else if (type == 8) {
+        printf("\t\tType: Request\n\n");
+    }
+    else {
+        printf("\t\tType: %hu\n", type);
+    }
 }
 
 void processUDP(char *packet) {
@@ -216,14 +232,14 @@ void processUDP(char *packet) {
     printf("\tUDP Header\n");
 
     if (src == DNSPORT) 
-        printf("\t\tSource Port: DNS\n");
+        printf("\t\tSource Port:  DNS\n");
     else
-        printf("\t\tSource Port: %u\n", src);
+        printf("\t\tSource Port:  %u\n", src);
 
     if (dest == DNSPORT) 
-        printf("\t\tDest Port: DNS\n\n");
+        printf("\t\tDest Port:  DNS\n\n");
     else
-        printf("\t\tDest Port: %u\n\n", dest);
+        printf("\t\tDest Port:  %u\n\n", dest);
 }
 
 void processTCP(char *packet, uint16_t len, 
@@ -231,7 +247,7 @@ void processTCP(char *packet, uint16_t len,
     char *checkSumHandle = malloc(len + 12);
     createPseudoHeader(&checkSumHandle, packet, len, &(source->s_addr), &(destination->s_addr));
     uint16_t checksum = in_cksum((unsigned short *)checkSumHandle, len + 12);
-    checksum = ntohs(checksum);
+    //checksum = ntohs(checksum);
     free(checkSumHandle);
     uint8_t  offset, flags;
     uint16_t chkField, src, dest, winSize;
@@ -296,15 +312,34 @@ void processTCP(char *packet, uint16_t len,
          
 void createPseudoHeader(char **buffer, char *packet, 
  uint16_t len, uint32_t *src, uint32_t *dest) {
+    int ndx;
+    uint16_t data; 
+    uint16_t zero = 0x00;
+    uint8_t six = 6; 
+
     (*src) = ntohl(*src);
     (*dest) = ntohl(*dest);
     memcpy(*buffer, src, 4);
     memcpy((*buffer) + 4, dest, 4);
+    
+    memcpy((*buffer) + 8, &zero, 1);
+    memcpy((*buffer) + 9, &six, 1);
+    /*
     *((*buffer) + 8) = 0x00; //reserved 0
     *((*buffer) + 9) = 0x06; //protocol, will be 6 for TCP
+    */
     memcpy((*buffer) + 10, &(len), 2);
-    memcpy((*buffer) + 12, packet, len);
-    *((*buffer) + 28) = 0x0000; //set the checksum field to 0
+
+    for (ndx = 0; ndx < len; ndx += 2) {
+        //try this to put data in host order before passing to checksum calc
+        memcpy(&data, packet + ndx, 2);
+        data = ntohs(data);
+        memcpy((*buffer) + 12 + ndx, &data, 2);     
+    }
+
+    //memcpy((*buffer) + 12, packet, len);
+    //*((*buffer) + 28) = 0x0000; //set the checksum field to 0
+    memcpy((*buffer) + 28, &zero, 2);
 }
 
 uint16_t ipCheckSumCalc(char *packet) {
