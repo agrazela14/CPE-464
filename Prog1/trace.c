@@ -153,6 +153,7 @@ void processIP(char *packet) {
     printf("\tIP Header\n");
     printf("\t\tIP Version: %hu\n", (ver_IHL & 0xF0) >> 4);
     printf("\t\tHeader Len (bytes): %hu\n", (ver_IHL & 0x0F) * 4);
+    printf("\t\tTotal Len (bytes): %u\n", totalLen);
 
     printf("\t\tTOS subfields:\n");
     // I don't know what it means by " bits "
@@ -230,7 +231,7 @@ void processTCP(char *packet, uint16_t len,
     char *checkSumHandle = malloc(len + 12);
     createPseudoHeader(&checkSumHandle, packet, len, &(source->s_addr), &(destination->s_addr));
     uint16_t checksum = in_cksum((unsigned short *)checkSumHandle, len + 12);
-    //checksum = ntohs(checksum);
+    checksum = ntohs(checksum);
     free(checkSumHandle);
     uint8_t  offset, flags;
     uint16_t chkField, src, dest, winSize;
@@ -295,6 +296,8 @@ void processTCP(char *packet, uint16_t len,
          
 void createPseudoHeader(char **buffer, char *packet, 
  uint16_t len, uint32_t *src, uint32_t *dest) {
+    (*src) = ntohl(*src);
+    (*dest) = ntohl(*dest);
     memcpy(*buffer, src, 4);
     memcpy((*buffer) + 4, dest, 4);
     *((*buffer) + 8) = 0x00; //reserved 0
