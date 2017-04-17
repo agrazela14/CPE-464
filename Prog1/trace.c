@@ -140,7 +140,8 @@ void processIP(char *packet) {
     memcpy(&protocol, packet++, 1);
 
     memcpy(&checkSum, packet, 2);
-    calcCheckSum = ipCheckSumCalc(packetForCheck);
+    //calcCheckSum = ipCheckSumCalc(packetForCheck);
+    calcCheckSum = in_cksum((unsigned short *)packetForCheck, (ver_IHL & 0x0F) * 4);
     checkSum = ntohs(checkSum);
     calcCheckSum = ntohs(calcCheckSum);
 
@@ -180,7 +181,7 @@ void processIP(char *packet) {
     }
 
     //Do the checksum part later because that's the hardest part
-    if (calcCheckSum == 0xFFFF) {
+    if (calcCheckSum == 0x0000) {
         printf("\t\tChecksum: Correct (0x%04x)\n", checkSum);
     }
     else {
