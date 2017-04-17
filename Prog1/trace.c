@@ -16,15 +16,9 @@
 #define DNSPORT 53 
 #define HTTPPORT 80 
 
-/***************
-* REMINDER:
-* Bytes are 8 bits, you fool 
-***************/
-
 int main(int argc, char **argv) {
     int packetNum = 1;
 
-    //printf("%d %d\n", sizeof(struct ether_addr), sizeof(struct in_addr));
     if (argc < 2) {
         fprintf(stderr, "Please provide a path to a .pcap file to read");
         return -1; 
@@ -76,6 +70,9 @@ int readPacket(pcap_t *traceFile, int num) {
         else if (etherType == IP4TYPE) {
             printf("\t\tType: IP\n\n");
             processIP(postEther);
+        }
+        else {
+            printf("\t\tType: Unknown\n\n");
         }
     } 
     return res;
@@ -131,7 +128,6 @@ void processIP(char *packet) {
 
     memcpy(&ver_IHL, packet++, 1); 
     memcpy(&DSCP_ECN, packet++, 1);
-    //DSCP_ECN = ntohs(DSCP_ECN);
     memcpy(&totalLen, packet, 2);
     totalLen = ntohs(totalLen);
     packet += 6;
@@ -140,7 +136,6 @@ void processIP(char *packet) {
     memcpy(&protocol, packet++, 1);
 
     memcpy(&checkSum, packet, 2);
-    //calcCheckSum = ipCheckSumCalc(packetForCheck);
     calcCheckSum = in_cksum((unsigned short *)packetForCheck, (ver_IHL & 0x0F) * 4);
     checkSum = ntohs(checkSum);
     calcCheckSum = ntohs(calcCheckSum);
@@ -158,10 +153,8 @@ void processIP(char *packet) {
     if ((ver_IHL & 0x0F) * 4 > 20) {
         packet += ((ver_IHL & 0x0F) * 4 - 20);
     }
-    //printf("\t\tTotal Len (bytes): %u\n", totalLen);
 
     printf("\t\tTOS subfields:\n");
-    // I don't know what it means by " bits "
     printf("\t\t   Diffserv bits: %hu\n", (DSCP_ECN) >> 2);
     printf("\t\t   ECN bits: %hu\n", DSCP_ECN & 0x03);
     
@@ -180,13 +173,11 @@ void processIP(char *packet) {
         printf("\t\tProtocol: Unknown\n");
     }
 
-    //Do the checksum part later because that's the hardest part
     if (calcCheckSum == 0x0000) {
         printf("\t\tChecksum: Correct (0x%04x)\n", checkSum);
     }
     else {
         printf("\t\tChecksum: Incorrect (0x%04x)\n", checkSum);
-        //printf("\t\tChecksum Calc: %#04x\n", calcCheckSum);
     }
 
     printf("\t\tSender IP: %s\n", inet_ntoa(sender)); 
@@ -206,7 +197,6 @@ void processIP(char *packet) {
 void processICMP(char *packet) {
     uint8_t type;
     memcpy(&type, packet, 1);
-    //type = ntohs(type);
     
     printf("\tICMP Header\n"); 
     if (type == 0) {
@@ -275,7 +265,6 @@ void processTCP(char *packet, uint16_t len,
     ackNum = ntohl(ackNum);
     packet += 4;
     memcpy(&offset, packet, 1);//offset is just the top 4 bits of this
-    //offset = ntohs(offset);
     packet += 1;
     memcpy(&flags, packet, 1);
     packet += 1;
@@ -302,8 +291,6 @@ void processTCP(char *packet, uint16_t len,
     else
         printf("\t\tDest Port:  %u\n\n", dest);
 
-    //printf("\t\tSource Port:  %u\n", src);
-    //printf("\t\tDest Port:  %u\n", dest);
     printf("\t\tSequence Number: %u\n", seqNum);
     printf("\t\tACK Number: %u\n", ackNum);
     printf("\t\tData Offset (bytes): %hu\n", (offset >> 4) * 4);
@@ -329,8 +316,6 @@ void processTCP(char *packet, uint16_t len,
         printf("\t\tACK Flag: No\n");
          
     printf("\t\tWindow Size: %u\n", winSize);
-    //The "checksum Field" is what we need to print, how do we use the "checksum"
-    //printf("\t\tChecksum calc: %#04x\n", checksum); 
     if (checksum == 0) {
         printf("\t\tChecksum: Correct (0x%04x)\n\n", chkField); 
     }
@@ -342,52 +327,18 @@ void processTCP(char *packet, uint16_t len,
          
 void createPseudoHeader(char **buffer, char *packet, 
  uint16_t len, uint32_t *src, uint32_t *dest) {
-    //int ndx;
-    //uint16_t data; 
     uint16_t zero = 0x00;
     uint8_t six = 6; 
 
-    //(*src) = htonl(*src);
-    //(*dest) = htonl(*dest);
     memcpy(*buffer, src, 4);
     memcpy((*buffer) + 4, dest, 4);
     
     memcpy((*buffer) + 8, &zero, 1);
     memcpy((*buffer) + 9, &six, 1);
-    /*
-    *((*buffer) + 8) = 0x00; //reserved 0
-    *((*buffer) + 9) = 0x06; //protocol, will be 6 for TCP
-    */
     len = htons(len);
     memcpy((*buffer) + 10, &(len), 2);
     
-    /*
-    for (ndx = 0; ndx < len; ndx += 2) {
-        //try this to put data in host order before passing to checksum calc
-        memcpy(&data, packet + ndx, 2);
-        data = ntohs(data);
-        memcpy((*buffer) + 12 + ndx, &data, 2);     
-    }
-    */
     len = ntohs(len);
     memcpy((*buffer) + 12, packet, len);
-    //*((*buffer) + 28) = 0x0000; //set the checksum field to 0
-    //memcpy((*buffer) + 28, &zero, 2);
 }
-
-uint16_t ipCheckSumCalc(char *packet) {
-    uint16_t cur = 0;
-    uint16_t final = 0;
-    uint32_t sum = 0;
-    int ndx = 0;
-
-    for(ndx = 0; ndx < 10; ndx++) {
-        memcpy(&cur, packet, 2);
-        packet += 2;
-        sum += cur;
-    } 
-    final = (sum & 0x0000FFFF) + ((sum & 0xFFFF0000) >> 16);//to take care of the carry
-    return final;
-}
-
 
