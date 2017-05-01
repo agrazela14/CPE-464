@@ -79,7 +79,7 @@ int tcpServerSetup(int portNum, char *name) {
    struct sockaddr_in addr;
    addr.sin_family = AF_INET6;
    addr.sin_addr.saddr = INADDR_ANY;//Give an IP Address
-   addr.sin_.port = htons(portNum);//Give an IP Address
+   addr.sin_port = htons(portNum);//Give port num, 0 (default) for os to assign
 
    err = bind(fd, (struct *sockaddr)&addr, sizeof(struct sockaddr))//not sure about this struct  
    if (err < 0) {
@@ -92,7 +92,11 @@ int tcpServerSetup(int portNum, char *name) {
        exit(err);
    }
    temp = getsocketname(fd, (struct *sockaddr)&addr, sizeof(struct sockaddr));
-   printf("IP is: %d Port Number is: %d\n", temp);
+   if (temp < 0) {
+       perror("getsocketname error\n");
+       exit(-1);
+   }
+   printf("IP is: %s Port Number is: %d\n", inet_ntoa(addr.sin_addr), ntohs(addr.sin_port));
 
    return fd;
 }
@@ -165,12 +169,13 @@ void readLoop() {
             */
         }
     } 
+    free(table);
 }
 
 void tcpRecv(handle *table, int recvNdx, int numConnected) {
     char recvBuf[RECVSIZE];
     int ndx, ndx2;
-    int recvBytes = recv(table[recvNdx].fd, recvBuf, RECVSIZE, /*flags*/);
+    int recvBytes = recv(table[recvNdx].fd, recvBuf, RECVSIZE, MSG_WAITALL);
     short packetLen = ntohs(*((short *)recvBuf));
     char flag = recvBuf + 2; 
     char senderLen;
