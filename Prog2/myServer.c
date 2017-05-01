@@ -19,6 +19,7 @@
 #include <netdb.h>
 
 #include "networks.h"
+#include "myServer.h"
 
 #define MAXBUF 1024
 #define HANDLE_LEN 256
