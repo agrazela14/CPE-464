@@ -18,6 +18,7 @@
 #include <netdb.h>
 
 #include "networks.h"
+#include "myClient.h"
 
 #define MAXBUF 1024
 #define MAXHANDLE 250 
@@ -305,8 +306,7 @@ void eCommand() {
 
 }
 
-void checkArgs(int argc, char * argv[], char *handle, char *serverName, int *port )
-
+void checkArgs(int argc, char * argv[], char *handle, char *serverName, int *port)
 {
 	/* check command line arguments  */
 	if (argc != 4)
