@@ -16,25 +16,26 @@
 #include <strings.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
+#include <arpa/inet.h>
 #include <netdb.h>
 
-#include "networks.h"
+//#include "networks.h"
 #include "myServer.h"
 
 #define MAXBUF 1024
-#define HANDLE_LEN 256
+#define MAXDEST 9 
+//#define HANDLE_LEN 256
 #define DEBUG_FLAG 1
 #define BACKLOG_LEN 9
 
-void recvFromClient(int clientSocket);
-int checkArgs(int argc, char *argv[]);
-
 //For holding the handles that exist on the server
+/*
 typedef struct {
     int open;
     int clientFD;
     char handle[HANDLE_LEN];
 } handle;
+*/
 
 int main(int argc, char *argv[])
 {
@@ -51,38 +52,46 @@ int main(int argc, char *argv[])
 	serverSocket = tcpServerSetup(portNumber);
 
 	// wait for client to connect
-	clientSocket = tcpAccept(serverSocket, DEBUG_FLAG);
+	//clientSocket = tcpAccept(serverSocket, DEBUG_FLAG);
 
-	recvFromClient(clientSocket);
+	//recvFromClient(clientSocket);
+    readLoop(serverSocket);
 	
 	/* close the sockets */
 	close(clientSocket);
 	close(serverSocket);
+    printf("Exited from main\n");
 	return 0;
 }
 
+/*
 int checkArgs(int argc, char **argv) {
     if (argc > 1) {
         return atoi(argv[1]);
     }
     return 0;
 }
+*/
 
-int tcpServerSetup(int portNum, char *name) {
-   int fd = socket(AF_INET6, SOCK_STREAM, 0);
+int tcpServerSetup(int portNum) {
+   int fd = socket(AF_INET, SOCK_STREAM, 0);
    int err;
    int temp;
+   socklen_t addrLen;
 
    if (fd < 0) {
        perror("error opening socket\n");
        exit(fd);
    }
    struct sockaddr_in addr;
-   addr.sin_family = AF_INET6;
-   addr.sin_addr.saddr = INADDR_ANY;//Give an IP Address
+   memset(&addr, 0, sizeof(addr));
+   addr.sin_family = AF_INET;
+   addr.sin_addr.s_addr = INADDR_ANY;//Give an IP Address
    addr.sin_port = htons(portNum);//Give port num, 0 (default) for os to assign
-
-   err = bind(fd, (struct *sockaddr)&addr, sizeof(struct sockaddr))//not sure about this struct  
+   addrLen = sizeof(addr);
+   
+   //IDK about this struct
+   err = bind(fd, (struct sockaddr *)&addr, addrLen); 
    if (err < 0) {
        perror("error binding socket\n");
        exit(err);
@@ -92,7 +101,7 @@ int tcpServerSetup(int portNum, char *name) {
        perror("error listening on socket\n");
        exit(err);
    }
-   temp = getsocketname(fd, (struct *sockaddr)&addr, sizeof(struct sockaddr));
+   temp = getsockname(fd, (struct sockaddr *)&addr, &addrLen);
    if (temp < 0) {
        perror("getsocketname error\n");
        exit(-1);
@@ -102,25 +111,25 @@ int tcpServerSetup(int portNum, char *name) {
    return fd;
 }
 
-void readLoop() {
+void readLoop(int servFd) {
     int ndx, used = 0, clients = 10;
     int selection;
-    fdset fds;
+    fd_set fds;
     handle *table = malloc(clients * sizeof(handle));
     struct sockaddr_in clientSock;
-    char recvBuf[RECVSIZE];
+    socklen_t clientSockLen = sizeof(clientSock);
 
     while (1) {
-        FD_ZERO(clientFds);
+        FD_ZERO(&fds);
         FD_SET(servFd, &fds);
 
-        for (ndx = 0; ndx < clients, ndx++) { 
-            if (table[ndx].flag != 0) {
+        for (ndx = 0; ndx < clients; ndx++) { 
+            if (table[ndx].open != 0) {
                 FD_SET(table[ndx].fd, &fds);
             }
         }
         //First parameter is number of FDs
-        selection = select(clients, fds, NULL, NULL, NULL);
+        selection = select(clients + 1, &fds, NULL, NULL, NULL);
         if (selection < 0) {
             perror("Select Error\n");
             exit(-1);
@@ -129,11 +138,14 @@ void readLoop() {
         //Check if we are waiting for a new connection
         if (FD_ISSET(servFd, &fds)) {
             table[used].fd = accept(servFd, 
-             (struct *sockaddr)&clientSock, sizeof(clientSock));
+             (struct sockaddr *)&clientSock, &clientSockLen);
             table[used].open = 1;
             if (table[used].fd < 0) {
                 perror("Accept Error\n");
                 exit(-1);
+            }
+            else {
+                printf("Accept Success\n");
             }
             used++;
             if (used >= clients) {
@@ -149,7 +161,7 @@ void readLoop() {
         //L
         //E
         for (ndx = 0; ndx < used; ndx++) {
-            if (FD_ISSET(table[ndx].fd)) {
+            if (FD_ISSET(table[ndx].fd, &fds)) {
                 //There's a read on this fd
                 //recvBytes = recv(table[ndx].fd, recvBuf, RECVSIZE, /*flags*/);
                 tcpRecv(table, ndx, used);
@@ -175,27 +187,40 @@ void readLoop() {
 }
 
 void tcpRecv(handle *table, int recvNdx, int numConnected) {
-    char recvBuf[RECVSIZE];
-    int ndx, ndx2;
-    int recvBytes = recv(table[recvNdx].fd, recvBuf, RECVSIZE, MSG_WAITALL);
+    char recvBuf[MAXBUF];
+    int ndx, ndx2, sendBytes;
+    int recvBytes = recv(table[recvNdx].fd, recvBuf, MAXBUF, 0 /*MSG_WAITALL*/);
     short packetLen = ntohs(*((short *)recvBuf));
-    char flag = recvBuf + 2; 
+    char flag = *(recvBuf + 2); 
     char senderLen;
-    short packetLen = ntohs((short)(*(buf)));
     char numDest;
     char sender[HANDLE_LEN];
     char destLens[MAXDEST];
-    char dests[MAXDEST * HANDLE_LEN];
+    char dests[MAXDEST * HANDLE_LEN + MAXDEST];
     char *tempDests = dests;
     char *tempBuf = recvBuf;
-    
+    char *targetHandle;
+    char sendBuf[MAXBUF];
 
-    switch flag {
+    if (recvBytes < 0) {
+        perror("Recv error\n");
+        exit(-1);
+    }
+
+    switch (flag) {
         case 1: //Initial Connection
-            printf("initial Connection from %s\n", buf + 3);
-            strcpy(table[recvNdx].handle, buf + 3); 
+            printf("initial Connection from %s\n", recvBuf + 3);
+            memcpy(table[recvNdx].handle, (recvBuf + 3), packetLen - 3); 
+            table[recvNdx].handle[packetLen - 2] = '\0';//null terminate
+            sendBuf[0] = htons(3);
+            sendBuf[2] = 2;
+            sendBytes = send(table[recvNdx].fd, sendBuf, 3, 0); 
+            if (sendBytes != 3) {
+                perror("Error sending initial response\n");
+            }
             break;
         case 5: //Message
+            printf("Received Message command\n");
             tempBuf += 3;
             senderLen = *(tempBuf); 
             memcpy(sender, ++tempBuf, senderLen);
@@ -209,15 +234,21 @@ void tcpRecv(handle *table, int recvNdx, int numConnected) {
             for (ndx = 0; ndx < numDest; ndx++) {
                 memcpy(tempDests, tempBuf, destLens[ndx]);
                 tempBuf += destLens[ndx];
+                tempDests += destLens[ndx];
+                *tempDests++ = '-';//for use with strtok
+                /*
                 tempDests[destLens[ndx]] = '\0';
                 tempDests += destLens[ndx] + 1;
+                */
             } 
             //search the table for the handle and retransmit
             for (ndx = 0; ndx < numDest; ndx++) {
-                for (ndx2 = 0; ndx < numConnected; ndx2++) {
-                    if (strcmp(table[ndx2].handle, dests[ndx]) == 0) {
+                targetHandle = strtok(dests, "-");
+                for (ndx2 = 0; ndx2 < numConnected; ndx2++) {
+                    if (strcmp(table[ndx2].handle, targetHandle) == 0) {
                         //send to this client
-                        send(table[ndx2].fd, tempBuf, strlen(tempBuf), MSG_DONTWAIT);
+                        printf("Sending to %s\n", table[ndx2].handle);
+                        send(table[ndx2].fd, tempBuf, strlen(tempBuf), 0 /*MSG_DONTWAIT*/);
                     }
                 }
              }
@@ -232,11 +263,11 @@ void tcpRecv(handle *table, int recvNdx, int numConnected) {
         default:
             break;
     }
-
 }
 
 //Figure out the arguments needed for these
 void handleMReq(handle *table, char *buf, char *senderHandle) {
+/*
     //Send the message in as many packets as necessary to the targets
     char *endptr;
     char **destHandles;
@@ -272,8 +303,8 @@ void handleMReq(handle *table, char *buf, char *senderHandle) {
         printf("\n");
     }
     printf("Sender is %s, Destinations are", senderHandle);
+*/
 }
-
 void handleLReq(handle *table, int ndx) {
     //Send out all the packets in an 'L' Request 
     //to the client at the ndx index in table
@@ -284,7 +315,7 @@ void handleEReq(handle *table, char *buf, char *senderHandle) {
 }
 
 int tcpAccept(int serverSock, int debug) {
-     
+    return 0;     
 }
 
 void recvFromClient(int clientSocket)

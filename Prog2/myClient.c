@@ -5,6 +5,8 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
+#include <ctype.h>
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <sys/uio.h>
@@ -15,25 +17,18 @@
 #include <strings.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
+#include <arpa/inet.h>
 #include <netdb.h>
 
-#include "networks.h"
+//#include "networks.h"
 #include "myClient.h"
 
 #define MAXBUF 1024
-#define MAXHANDLE 250 
+#define MAXTARGETS 9
 #define DEBUG_FLAG 1
 #define xstr(a) str(a)
 #define str(a) #a
 #define HANDLE_LEN 256
-
-typedef struct {
-    int blocked;
-    char handle[MAXHANDLE];
-} client;
-
-void sendToServer(int socketNum);
-void checkArgs(int argc, char * argv[]);
 
 int main(int argc, char * argv[])
 {
@@ -45,7 +40,7 @@ int main(int argc, char * argv[])
 
     checkArgs(argc, argv, handle, serverName, &serverPort);
 	/* set up the TCP Client socket  */
-	socketNum = tcpClientSetup(handle, serverName, serverPort DEBUG_FLAG);
+	socketNum = tcpClientSetup(handle, serverName, serverPort, DEBUG_FLAG);
 	
 	clientLoop(socketNum, handle, others, &numClients, &tableSize);
 	
@@ -58,19 +53,19 @@ int main(int argc, char * argv[])
 int tcpClientSetup(char *handle, char *serverName, int serverPort, int flags) {
     int fd, err;
     struct sockaddr_in addr;
+    fd = socket(AF_INET, SOCK_STREAM, 0);
 
-    addr.sin_family = AF_INET6;
-    addr.sin_addr.saddr = inet_aton(serverName);//Give an IP Address
+    addr.sin_family = AF_INET;
+    inet_aton(serverName, &(addr.sin_addr/*.s_addr*/));//Give an IP Address
     addr.sin_port = htons(serverPort);//Give port num, 0 (default) for os to assign
 
-    fd = socket(AF_INET6, SOCK_STREAM, 0);
 
     if (fd < 0) {
         perror("socket error\n");
         exit(-1);
     }
     
-    err = connect(fd, (struct *sockaddr)&addr, sizeof(struct sockaddr));
+    err = connect(fd, (struct sockaddr *)&addr, sizeof(struct sockaddr));
     
     if (err < 0) {
         perror("connect error\n");
@@ -91,9 +86,9 @@ void initialPacket(char *handle, int fd) {
     memcpy(packet + 3, handle, strlen(handle)); 
     //now send our packet off!
 
-    size = send(fd, packet, strlen(handle) + 3, );
+    size = send(fd, packet, strlen(handle) + 3, 0);
     if (size != strlen(handle) + 3) {
-        fprintf(stderr, "initial Packet send, expected size %d, got %d\n", 
+        fprintf(stderr, "initial Packet send, expected size %lu, got %d\n", 
          strlen(handle) + 3, size);
         exit(-1); 
     }
@@ -108,6 +103,7 @@ void initialPacket(char *handle, int fd) {
         fprintf(stderr, "Bad Flag on initial recv: %d\n", reply[2]);
         exit(-1);
     }
+    printf("Reply to initial packet received, flag = %d\n", reply[2]);
 }
 
 void createHeader(char *packet, short len, char flag) {
@@ -116,34 +112,41 @@ void createHeader(char *packet, short len, char flag) {
 } 
 
 void clientLoop(int sockFd, char *handle, client *others, int *numClients, int *maxClients) {
-    int exit = 1 
-    while (!exit) {
-        exit = sendToServer(sockFd, handle, others, numClients, maxClients);
+    int toExit = 0; 
+    int toRead;
+    fd_set serverSet;
+
+    while (!toExit) {
+        FD_ZERO(&serverSet);
+        FD_SET(sockFd, &serverSet);
+        toRead = select(1, &serverSet, NULL, NULL, NULL);
+        if (toRead < 0) {
+            perror("Selection err\n");
+            exit(-1);
+        }
+        
+        if (FD_ISSET(socket, &serverSet)) {
+            toExit = recvFromServer(sockFd);
+        } 
+
+        sendToServer(sockFd, handle, others, numClients, maxClients);
     } 
 }
 
-int sendToServer(int socketNum, char *handle, client *others, int *numClients, int *maxClients)
-{
-	char sendBuf[MAXBUF];   //data buffer
-	int sendLen = 0;        //amount of data to send
-	int sent = 0;            //actual amount of data sent/* get the data and send it   */
-    int exit = 1;
-			
-	printf("Enter the data to send: ");
-	scanf("%" xstr(MAXBUF) "[^\n]%*[^\n]", sendBuf);
-	
-	sendLen = strlen(sendBuf) + 1;
-	printf("read: %s len: %d\n", sendBuf, sendLen);
-    
-    switch (toupper(sendBuf[1])) {
-        case 'M':
-            mCommand(sendBuf, client, sockNum); 
+int recvFromServer(int sockFd) {
+	char recvBuf[MAXBUF];   //data buffer
+    int toExit = 0;
+    int recvBytes = recv(sockFd, recvBuf, MAXBUF, 0); 
+    	
+    switch ((recvBuf[2])) {
+        case '5'://Message Success
+            mRecv(recvBuf); 
             break;
         case 'B':
-            bCommand(sendBuf, clients, numClients, maxClients);
+            bCommand(sendBuf, others, numClients, maxClients);
             break;
         case 'U':
-            uCommand(sendBuf, clients, numClients, maxClients);
+            uCommand(sendBuf, others, numClients, maxClients);
             break;
         case 'L':
             lCommand();
@@ -153,6 +156,9 @@ int sendToServer(int socketNum, char *handle, client *others, int *numClients, i
             break;
         default:
             break;
+    }
+    fflush(stdin);
+    memset(sendBuf, 0, MAXBUF);
     	
 	//sent =  send(socketNum, sendBuf, sendLen, 0);
     /*
@@ -165,18 +171,69 @@ int sendToServer(int socketNum, char *handle, client *others, int *numClients, i
 	printf("String sent: %s \n", sendBuf);
 	printf("Amount of data sent is: %d\n", sent);
     */
-    return exit;
+    return toExit;
+}
+
+void sendToServer(int socketNum, char *handle, client *others, int *numClients, int *maxClients)
+{
+	char sendBuf[MAXBUF];   //data buffer
+	int sendLen = 0;        //amount of data to send
+    int toExit = 0;
+    	
+	//printf("Enter the data to send: ");
+	printf("$");
+	//scanf("%" xstr(MAXBUF) "[^\n]%*[^\n]", sendBuf);
+    //scanf("%s", sendBuf);
+    fgets(sendBuf, MAXBUF, stdin);
+     
+	sendLen = strlen(sendBuf) + 1;
+	printf("read: %s len: %d\n", sendBuf, sendLen);
+     
+    switch (toupper(sendBuf[1])) {
+        case 'M':
+            mCommand(sendBuf, handle, socketNum); 
+            break;
+        case 'B':
+            bCommand(sendBuf, others, numClients, maxClients);
+            break;
+        case 'U':
+            uCommand(sendBuf, others, numClients, maxClients);
+            break;
+        case 'L':
+            lCommand();
+            break;
+        case 'E':
+            eCommand();
+            break;
+        default:
+            break;
+    }
+    fflush(stdin);
+    memset(sendBuf, 0, MAXBUF);
+    	
+	//sent =  send(socketNum, sendBuf, sendLen, 0);
+    /*
+	if (sent < 0)
+	{
+		perror("send call");
+		exit(-1);
+	}
+
+	printf("String sent: %s \n", sendBuf);
+	printf("Amount of data sent is: %d\n", sent);
+    */
+    return toExit;
 }
 
 int mCommand(char *buf, char *handle, int fd) {
     char packet[MAXBUF];
     char *packetTemp = packet + 3;
-    char numHandles = strtol(buf + 2);
+    char *endPtr;
+    char numHandles = strtol(buf + 2, &endPtr, 10);
     char *token;
-    char *handles[MAXHANDLE];
+    char handles[MAXTARGETS][MAXHANDLE];
     char *message;
-    int totalLen = 3;
-    int nonMsgLen, msgParts, msgLen;
+    int nonMsgLen, msgParts, msgLen, ndx;
     
     token = strtok(buf, " ");
     //Skip the %M
@@ -191,6 +248,7 @@ int mCommand(char *buf, char *handle, int fd) {
     
     seekMessage(&message, buf, numHandles); //message here might need to be a double pointer
     for (ndx = 0; ndx < numHandles; ndx++) {
+        printf("token: %s\n", token);
         strcpy(handles[ndx], token);
         token = strtok(NULL, " ");
     } 
@@ -218,46 +276,55 @@ int mCommand(char *buf, char *handle, int fd) {
     msgLen = strlen(message);
     //Now taking everything that's already in the header, we need to send
     //Possibly successive messages of at most 200 bytes 
-
-    for (ndx = 0; ndx < msgLen / msgParts; ndx++) {
+    
+    for (ndx = 0; ndx < ((msgLen / msgParts) > 1 ? msgLen / msgParts : 1); ndx++) {
         sendMessage(fd, packetTemp, packet, message, 
          (msgLen - ndx * msgParts < msgParts) 
          ? msgLen - ndx * msgParts : msgParts);
         message += msgParts; 
     }
-    createHeader(packet, totalLen, 5); 
+    return 0;
 }
 
-void sendMessage(int fd, char *msgStart, char *packet, int bytes) {
+void sendMessage(int fd, char *msgStart, char *packet, char *msg, int bytes) {
     int len = msgStart - packet + bytes;
+    int sent;
+    printf("sending Message\n");
     createHeader(packet, len, 5);
     memcpy(msgStart, msg, bytes);
-    send(fd, packet, len, MSG_DONTWAIT);
+    sent = send(fd, packet, len, MSG_DONTWAIT);
+    if (sent != len) {
+        fprintf(stderr, "Send didn't send right amount %d, sent %d instead\n",
+         len, sent);
+        exit(-1);
+    }
 }
 
 void seekMessage(char **msg, char *buf, int numHandles) {
     int cycles = numHandles + 1;
+    int ndx;
+
     if (numHandles != 1) {
         cycles += 1;
     }
 
-    msg = buf;
+    *msg = buf;
 
     for (ndx = 0; ndx < cycles; ndx++) {
         while (**msg == ' ') {
-            *msg++;
+            (*msg)++;
         }
         while (**msg != ' ') {
-            *msg++;
+            (*msg)++;
         }
     }
 }
 
-void bCommand(char *buf, client *clients, int numClients, int *maxClients) {
+void bCommand(char *buf, client *clients, int *numClients, int *maxClients) {
     int found, ndx;
     char banHandle[MAXHANDLE];
 
-    if (numClients >= *maxClients) {
+    if (*numClients >= *maxClients) {
         *maxClients *= 2;
         clients = realloc(clients, *maxClients * sizeof(client));
     } 
@@ -266,11 +333,12 @@ void bCommand(char *buf, client *clients, int numClients, int *maxClients) {
         buf++;
     }
     strcpy(banHandle, buf); 
-    if (strlen(banHandle != 0)) {
-        for (ndx = 0; ndx < numClients; ndx++) { 
+    if (strlen(banHandle) != 0) {
+        for (ndx = 0; ndx < *numClients; ndx++) { 
             if (strcmp(clients[ndx].handle, banHandle)) {
                 if (clients[ndx].blocked) {
-                    perror("Block Failed, handle %s is already blocked\n", banHandle);
+                    fprintf(stderr, "Block Failed, handle %s is already blocked\n"
+                     , banHandle);
                 }
                 else {
                     clients[ndx].blocked = 1;
@@ -280,21 +348,21 @@ void bCommand(char *buf, client *clients, int numClients, int *maxClients) {
             }
         }
         if (!found) {
-            numClients++;
-            strcpy(clients[numClients].handle, banHandle);
-            clients[numClients].blocked = 1;
+            (*numClients)++;
+            strcpy(clients[*numClients].handle, banHandle);
+            clients[*numClients].blocked = 1;
         }
     }
 
     printf("List of Blocked Users: \n");
-    for (ndx = 0; ndx < numClients; ndx++) { 
-        if (clients[ndx].blocked = 1;) {
+    for (ndx = 0; ndx < *numClients; ndx++) { 
+        if (clients[ndx].blocked == 1) {
             printf("%s\n", clients[ndx].handle);
         }
     }
 }
 
-void uCommand(char *buf, client *clients, int numClients, int *maxClients) {
+void uCommand(char *buf, client *clients, int *numClients, int *maxClients) {
 
 }
 
@@ -312,15 +380,16 @@ void checkArgs(int argc, char * argv[], char *handle, char *serverName, int *por
 	if (argc != 4)
 	{
 		printf("usage: %s host-name port-number \n", argv[0]);
-		exit(1);
+		exit(-1);
 	}
     
-    if (strlen(argv[1] > MAXHANDLE)) {
+    if (strlen(argv[1]) > MAXHANDLE) {
         perror("Handle too long, 250 character max\n");
-        exit(1);
+        exit(-1);
     }
     strcpy(handle, argv[1]);
     strcpy(serverName, argv[2]);
     *port = atoi(argv[3]);
-    
 }
+
+

@@ -1,3 +1,8 @@
+#ifndef MYCLIENT_H
+#define MYCLIENT_H
+
+#define MAXHANDLE 256
+
 typedef struct {
     int blocked;
     char handle[MAXHANDLE];
@@ -17,16 +22,18 @@ int sendToServer(int socketNum, char *handle, client *others, int *numClients, i
 
 int mCommand(char *buf, char *handle, int fd);
 
-void sendMessage(int fd, char *msgStart, char *packet, int bytes);
+void sendMessage(int fd, char *msgStart, char *packet, char *msg, int bytes);
 
 void seekMessage(char **msg, char *buf, int numHandles);
 
-void bCommand(char *buf, client *clients, int numClients, int *maxClients);
+void bCommand(char *buf, client *clients, int *numClients, int *maxClients);
 
-void uCommand(char *buf, client *clients, int numClients, int *maxClients);
+void uCommand(char *buf, client *clients, int *numClients, int *maxClients);
 
 void lCommand();
 
 void eCommand();
 
 void checkArgs(int argc, char * argv[], char *handle, char *serverName, int *port);
+
+#endif

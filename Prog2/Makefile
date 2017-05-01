@@ -4,6 +4,7 @@
 CC= gcc
 CFLAGS= -g -Wall
 LIBS =  
+OFILES = #networks.o gethostbyname6.o 
 
 #append a 32 to executable name if on a 32 bit machine
 FILE =  
@@ -20,10 +21,10 @@ all:  $(FILE) myClient$(FILE) myServer$(FILE)
 	rm -f *.o
 	
 myClient$(FILE): myClient.c networks.o gethostbyname6.o
-	$(CC) $(CFLAGS) -o myClient$(FILE) myClient.c networks.o gethostbyname6.o $(LIBS)
+	$(CC) $(CFLAGS) -o myClient$(FILE) myClient.c $(OFILES) $(LIBS)
 
 myServer$(FILE): myServer.c networks.o gethostbyname6.o
-	$(CC) $(CFLAGS) -o myServer$(FILE) myServer.c networks.o gethostbyname6.o $(LIBS)
+	$(CC) $(CFLAGS) -o myServer$(FILE) myServer.c $(OFILES) $(LIBS)
 
 .c.o:
 	gcc -c $(CFLAGS) $< -o $@ $(LIBS)
