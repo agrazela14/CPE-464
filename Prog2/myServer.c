@@ -30,7 +30,7 @@ int checkArgs(int argc, char *argv[]);
 
 //For holding the handles that exist on the server
 typedef struct {
-    int flag;
+    int open;
     int clientFD;
     char handle[HANDLE_LEN];
 } handle;
@@ -129,6 +129,7 @@ void readLoop() {
         if (FD_ISSET(servFd, &fds)) {
             table[used].fd = accept(servFd, 
              (struct *sockaddr)&clientSock, sizeof(clientSock));
+            table[used].open = 1;
             if (table[used].fd < 0) {
                 perror("Accept Error\n");
                 exit(-1);
@@ -191,7 +192,7 @@ void tcpRecv(handle *table, int recvNdx, int numConnected) {
     switch flag {
         case 1: //Initial Connection
             printf("initial Connection from %s\n", buf + 3);
-            strcpy(table[ndx].handle, buf + 3); 
+            strcpy(table[recvNdx].handle, buf + 3); 
             break;
         case 5: //Message
             tempBuf += 3;
@@ -215,6 +216,7 @@ void tcpRecv(handle *table, int recvNdx, int numConnected) {
                 for (ndx2 = 0; ndx < numConnected; ndx2++) {
                     if (strcmp(table[ndx2].handle, dests[ndx]) == 0) {
                         //send to this client
+                        send(table[ndx2].fd, tempBuf, strlen(tempBuf), MSG_DONTWAIT);
                     }
                 }
              }
