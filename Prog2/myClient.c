@@ -23,6 +23,7 @@
 #define DEBUG_FLAG 1
 #define xstr(a) str(a)
 #define str(a) #a
+#define HANDLE_LEN 256
 
 void sendToServer(int socketNum);
 void checkArgs(int argc, char * argv[]);
@@ -30,7 +31,11 @@ void checkArgs(int argc, char * argv[]);
 int main(int argc, char * argv[])
 {
 	int socketNum = 0;         //socket descriptor
+    char handle[HANDLE_LEN];
+    char serverName[HANDLE_LEN];
+    int serverPort;
 
+    checkArgs(argc, argv, handle, serverName, &serverPort);
 	/* set up the TCP Client socket  */
 	socketNum = tcpClientSetup(argv[1], argv[2], DEBUG_FLAG);
 	
@@ -64,12 +69,15 @@ void sendToServer(int socketNum)
 	printf("Amount of data sent is: %d\n", sent);
 }
 
-void checkArgs(int argc, char * argv[])
+void checkArgs(int argc, char * argv[], char *handle, char *serverName, int *port )
 {
 	/* check command line arguments  */
-	if (argc != 3)
+	if (argc != 4)
 	{
 		printf("usage: %s host-name port-number \n", argv[0]);
 		exit(1);
 	}
+    strcpy(handle, argv[1]);
+    strcpy(serverName, argv[2]);
+    *port = atoi(argv[3]);
 }
