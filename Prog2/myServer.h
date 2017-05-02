@@ -11,11 +11,11 @@ typedef struct {
 
 int main(int argc, char *argv[]);
 
-//int checkArgs(int argc, char **argv);
-
 int tcpServerSetup(int portNum);
 
 void readLoop(int servFd);
+
+void createHeader(char *packet, short len, char flag);
 
 void tcpRecv(handle *table, int recvNdx, int numConnected);
 

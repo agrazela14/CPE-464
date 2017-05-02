@@ -7,6 +7,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
+#include <errno.h>
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <sys/uio.h>
@@ -113,10 +114,11 @@ void createHeader(char *packet, short len, char flag) {
 
 void clientLoop(int sockFd, char *handle, client *others, int *numClients, int *maxClients) {
     int toExit = 0; 
-    int toRead;
-    fd_set serverSet;
+    //int toRead;
+    //fd_set serverSet;
 
     while (!toExit) {
+        /*
         FD_ZERO(&serverSet);
         FD_SET(sockFd, &serverSet);
         toRead = select(1, &serverSet, NULL, NULL, NULL);
@@ -125,10 +127,12 @@ void clientLoop(int sockFd, char *handle, client *others, int *numClients, int *
             exit(-1);
         }
         
-        if (FD_ISSET(socket, &serverSet)) {
+        if (FD_ISSET(sockFd, &serverSet)) {
             toExit = recvFromServer(sockFd);
         } 
+        */
 
+        toExit = recvFromServer(sockFd);
         sendToServer(sockFd, handle, others, numClients, maxClients);
     } 
 }
@@ -136,49 +140,61 @@ void clientLoop(int sockFd, char *handle, client *others, int *numClients, int *
 int recvFromServer(int sockFd) {
 	char recvBuf[MAXBUF];   //data buffer
     int toExit = 0;
-    int recvBytes = recv(sockFd, recvBuf, MAXBUF, 0); 
-    	
+    int recvBytes = recv(sockFd, recvBuf, MAXBUF, MSG_DONTWAIT); 
+
+    if (errno == EWOULDBLOCK || errno == EAGAIN) {
+        printf("errno trapped\n");
+        return toExit;
+    } 	
+    else if(recvBytes < 0) {
+        perror("Recv Error\n");
+        return toExit;
+    }
+    printf("Recieved Something\n");
     switch ((recvBuf[2])) {
-        case '5'://Message Success
+        case 5: //Message Success
             mRecv(recvBuf); 
             break;
-        case 'B':
-            bCommand(sendBuf, others, numClients, maxClients);
+        case 7: //Message Failure
+            mFailure(recvBuf);
             break;
-        case 'U':
-            uCommand(sendBuf, others, numClients, maxClients);
+        case 9: //Exit
+            toExit = eRecv();
             break;
-        case 'L':
-            lCommand();
-            break;
-        case 'E':
-            eCommand();
+        case 11: //Start of List
+            lRecv();
             break;
         default:
             break;
     }
-    fflush(stdin);
-    memset(sendBuf, 0, MAXBUF);
-    	
-	//sent =  send(socketNum, sendBuf, sendLen, 0);
-    /*
-	if (sent < 0)
-	{
-		perror("send call");
-		exit(-1);
-	}
-
-	printf("String sent: %s \n", sendBuf);
-	printf("Amount of data sent is: %d\n", sent);
-    */
     return toExit;
+}
+
+void mRecv(char *recvBuf) {
+    int len = ntohs((short)(*recvBuf));
+    char printBuf[len];
+    memcpy(printBuf, recvBuf + 3, len - 3);
+    printBuf[len - 2] = '\0';
+    printf("%s\n", printBuf);
+}
+
+void mFailure(char *recvBuf) {
+
+}
+
+int eRecv() {
+    return 0;
+}
+
+void lRecv() {
+
 }
 
 void sendToServer(int socketNum, char *handle, client *others, int *numClients, int *maxClients)
 {
 	char sendBuf[MAXBUF];   //data buffer
 	int sendLen = 0;        //amount of data to send
-    int toExit = 0;
+    //int toExit = 0;
     	
 	//printf("Enter the data to send: ");
 	printf("$");
@@ -222,7 +238,7 @@ void sendToServer(int socketNum, char *handle, client *others, int *numClients, 
 	printf("String sent: %s \n", sendBuf);
 	printf("Amount of data sent is: %d\n", sent);
     */
-    return toExit;
+    //return toExit;
 }
 
 int mCommand(char *buf, char *handle, int fd) {
@@ -293,6 +309,7 @@ void sendMessage(int fd, char *msgStart, char *packet, char *msg, int bytes) {
     createHeader(packet, len, 5);
     memcpy(msgStart, msg, bytes);
     sent = send(fd, packet, len, MSG_DONTWAIT);
+    printf("Sent %d Bytes\n", sent);
     if (sent != len) {
         fprintf(stderr, "Send didn't send right amount %d, sent %d instead\n",
          len, sent);

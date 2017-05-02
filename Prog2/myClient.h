@@ -18,7 +18,17 @@ void createHeader(char *packet, short len, char flag);
 
 void clientLoop(int sockFd, char *handle, client *others, int *numClients, int *maxClients);
 
-int sendToServer(int socketNum, char *handle, client *others, int *numClients, int *maxClients);
+int recvFromServer(int sockFd);
+
+void mRecv(char *recvBuf);
+
+void mFailure(char *recvBuf);
+
+int eRecv();
+
+void lRecv();
+
+void sendToServer(int socketNum, char *handle, client *others, int *numClients, int *maxClients);
 
 int mCommand(char *buf, char *handle, int fd);
 

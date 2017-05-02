@@ -37,6 +37,11 @@ typedef struct {
 } handle;
 */
 
+typedef struct {
+    char handleLen;
+    char handle[HANDLE_LEN];
+}target;
+
 int main(int argc, char *argv[])
 {
 	int serverSocket = 0;   //socket descriptor for the server socket
@@ -186,8 +191,14 @@ void readLoop(int servFd) {
     free(table);
 }
 
+void createHeader(char *packet, short len, char flag) {
+    packet[0] = htons(len);
+    packet[2] = flag;
+}
+
 void tcpRecv(handle *table, int recvNdx, int numConnected) {
     char recvBuf[MAXBUF];
+    int totalOffset;
     int ndx, ndx2, sendBytes;
     int recvBytes = recv(table[recvNdx].fd, recvBuf, MAXBUF, 0 /*MSG_WAITALL*/);
     short packetLen = ntohs(*((short *)recvBuf));
@@ -196,11 +207,13 @@ void tcpRecv(handle *table, int recvNdx, int numConnected) {
     char numDest;
     char sender[HANDLE_LEN];
     char destLens[MAXDEST];
-    char dests[MAXDEST * HANDLE_LEN + MAXDEST];
-    char *tempDests = dests;
+    //char dests[MAXDEST * HANDLE_LEN + MAXDEST];
+    //char *tempDests = dests;
     char *tempBuf = recvBuf;
-    char *targetHandle;
+    //char *targetHandle;
     char sendBuf[MAXBUF];
+
+    target *targets;
 
     if (recvBytes < 0) {
         perror("Recv error\n");
@@ -212,8 +225,11 @@ void tcpRecv(handle *table, int recvNdx, int numConnected) {
             printf("initial Connection from %s\n", recvBuf + 3);
             memcpy(table[recvNdx].handle, (recvBuf + 3), packetLen - 3); 
             table[recvNdx].handle[packetLen - 2] = '\0';//null terminate
+            createHeader(sendBuf, 3, 2);
+            /*
             sendBuf[0] = htons(3);
             sendBuf[2] = 2;
+            */
             sendBytes = send(table[recvNdx].fd, sendBuf, 3, 0); 
             if (sendBytes != 3) {
                 perror("Error sending initial response\n");
@@ -226,32 +242,47 @@ void tcpRecv(handle *table, int recvNdx, int numConnected) {
             memcpy(sender, ++tempBuf, senderLen);
             tempBuf += senderLen;
             numDest = *(tempBuf++);
+            targets = malloc(numDest * sizeof(target));
+            printf("numDests %d\n", numDest);
             //get all the destination lengths
             for (ndx = 0; ndx < numDest; ndx++) {
-                destLens[ndx] = *(tempBuf++);
+                memcpy(&(targets[ndx].handleLen), &(destLens[ndx]), sizeof(char));
+                //destLens[ndx] = *(tempBuf++);
+                tempBuf++;
             }
             //Make a list of destinations to send to
             for (ndx = 0; ndx < numDest; ndx++) {
-                memcpy(tempDests, tempBuf, destLens[ndx]);
+                memcpy(targets[ndx].handle, tempBuf, targets[ndx].handleLen);
+                targets[ndx].handle[(int)targets[ndx].handleLen] = '\0';
+                //memcpy(tempDests, tempBuf, destLens[ndx]);
                 tempBuf += destLens[ndx];
-                tempDests += destLens[ndx];
-                *tempDests++ = '-';//for use with strtok
+                //tempDests += destLens[ndx];
+                //*tempDests++ = ' ';//for use with strtok
                 /*
                 tempDests[destLens[ndx]] = '\0';
                 tempDests += destLens[ndx] + 1;
                 */
             } 
             //search the table for the handle and retransmit
+            //targetHandle = strtok(dests, " ");
             for (ndx = 0; ndx < numDest; ndx++) {
-                targetHandle = strtok(dests, "-");
+                printf("Target: %s\n", targets[ndx].handle); 
                 for (ndx2 = 0; ndx2 < numConnected; ndx2++) {
-                    if (strcmp(table[ndx2].handle, targetHandle) == 0) {
+                    if (strcmp(table[ndx2].handle, targets[ndx].handle) == 0) {
                         //send to this client
                         printf("Sending to %s\n", table[ndx2].handle);
-                        send(table[ndx2].fd, tempBuf, strlen(tempBuf), 0 /*MSG_DONTWAIT*/);
+                        createHeader(sendBuf, strlen(tempBuf) + 3, 5);
+                        memcpy(sendBuf + 3, tempBuf, recvBytes - (tempBuf - recvBuf));
+                        sendBytes = send(table[ndx2].fd, sendBuf, strlen(sendBuf), 0);
+                        printf("Sent %d Bytes\n", sendBytes);
+                        if (sendBytes != strlen(sendBuf)) {
+                            perror("Send Message Err\n");
+                        }
                     }
                 }
+                //targetHandle = strtok(NULL, " ");
              }
+            free (targets);
 
             break;
         case 8: //Exit
@@ -263,11 +294,19 @@ void tcpRecv(handle *table, int recvNdx, int numConnected) {
         default:
             break;
     }
+    memset(recvBuf, 0, MAXBUF);
+    memset(sendBuf, 0, MAXBUF);
 }
 
 //Figure out the arguments needed for these
 void handleMReq(handle *table, char *buf, char *senderHandle) {
 /*
+    //Send the message in as many packets as necessary to the targets
+    char *endptr;
+}
+
+//Figure out the arguments needed for these
+void handleMReq(handle *table, char *buf, char *senderHandle) {
     //Send the message in as many packets as necessary to the targets
     char *endptr;
     char **destHandles;
