@@ -88,6 +88,7 @@ void initialPacket(char *handle, int fd) {
     //now send our packet off!
 
     size = send(fd, packet, strlen(handle) + 3, 0);
+    printf("Sent Initial Packet\n");
     if (size != strlen(handle) + 3) {
         fprintf(stderr, "initial Packet send, expected size %lu, got %d\n", 
          strlen(handle) + 3, size);
@@ -95,6 +96,7 @@ void initialPacket(char *handle, int fd) {
     }
     //Now we need to receive a reply
     size = recv(fd, reply, 3, MSG_WAITALL);
+    printf("Reply to initial packet received, flag = %d\n", reply[2]);
     if (size != 3) {
         fprintf(stderr, "initial Packet recv, expected size %d, got %d\n", 
          3, size);
@@ -104,11 +106,11 @@ void initialPacket(char *handle, int fd) {
         fprintf(stderr, "Bad Flag on initial recv: %d\n", reply[2]);
         exit(-1);
     }
-    printf("Reply to initial packet received, flag = %d\n", reply[2]);
 }
 
 void createHeader(char *packet, short len, char flag) {
-    packet[0] = htons(len);
+    len = htons(len);
+    memcpy(packet, &len, 2);
     packet[2] = flag;
 } 
 
@@ -146,22 +148,32 @@ void clientLoop(int sockFd, char *handle, client *others, int *numClients, int *
 int recvFromServer(int sockFd) {
     printf("Receive called\n");
 	char recvBuf[MAXBUF];//data buffer
+    short recvLen;
     int toExit = 0;
-    int recvBytes = recv(sockFd, recvBuf, MAXBUF, 0); 
+    int recvBytes;// = recv(sockFd, recvBuf, MAXBUF, 0); 
     /*
     if (errno == EWOULDBLOCK || errno == EAGAIN) {
         printf("errno trapped\n");
         return toExit;
     }	
     */
-    if(recvBytes < 0) {
-        perror("Recv Error\n");
-        return toExit;
+    //Get the length of the incoming packet
+    recvBytes = recv(sockFd, &recvLen, 2, MSG_WAITALL);
+    if (recvBytes != 2) {
+        perror("Wrong # bytes received\n");
     }
-    printf("Recieved Something, flag = %d\n", recvBuf[2]);
-    switch ((recvBuf[2])) {
+
+    recvLen = ntohs(recvLen);
+    recvBytes = recv(sockFd, recvBuf, recvLen - 2, MSG_WAITALL);
+
+    if (recvBytes != recvLen) {
+        perror("Wrong # bytes received\n");
+    }
+    
+    printf("Recieved Something, flag = %d\n", recvBuf[0]);
+    switch ((recvBuf[0])) {
         case 5: //Message Success
-            mRecv(recvBuf); 
+            mRecv(recvBuf + 1, recvLen - 3); 
             break;
         case 7: //Message Failure
             mFailure(recvBuf);
@@ -178,11 +190,22 @@ int recvFromServer(int sockFd) {
     return toExit;
 }
 
-void mRecv(char *recvBuf) {
-    int len = ntohs((short)(*recvBuf));
-    char printBuf[len];
-    memcpy(printBuf, recvBuf + 3, len - 3);
-    printBuf[len - 2] = '\0';
+void mRecv(char *recvBuf, int bytes) {
+    char printBuf[bytes];
+    char sender[MAXHANDLE];
+    char senderLen;
+    char msgLen;
+
+    memcpy(&senderLen, recvBuf++, 1);
+    memcpy(sender, recvBuf, senderLen);
+    recvBuf += senderLen;
+    //Now see if it's on the blocked list
+    //But add that function later
+    
+    memcpy(&msgLen, recvBuf++, 1);
+    memcpy(printBuf, recvBuf, msgLen);
+
+    printBuf[(int)msgLen] = '\0';
     printf("Printing out the message: \n");
     printf("%s\n", printBuf);
 }

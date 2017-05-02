@@ -19,7 +19,7 @@ void createHeader(char *packet, short len, char flag);
 
 void tcpRecv(handle *table, int recvNdx, int numConnected);
 
-void handleMReq(handle *table, char *buf, char *senderHandle);
+void handleMReq(handle *table, char *recvBuf, int numConnected);
 
 void handleLReq(handle *table, int ndx);
 
