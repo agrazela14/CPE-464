@@ -114,14 +114,17 @@ void createHeader(char *packet, short len, char flag) {
 
 void clientLoop(int sockFd, char *handle, client *others, int *numClients, int *maxClients) {
     int toExit = 0; 
-    //int toRead;
-    //fd_set serverSet;
+    int toRead;
+    fd_set serverSet;
 
     while (!toExit) {
-        /*
         FD_ZERO(&serverSet);
         FD_SET(sockFd, &serverSet);
-        toRead = select(1, &serverSet, NULL, NULL, NULL);
+        FD_SET(STDIN_FILENO, &serverSet);
+	    printf("$");
+
+        toRead = select(sockFd + 1, &serverSet, NULL, NULL, NULL);
+        printf("Number of FDs %d, should be 2\n", toRead);
         if (toRead < 0) {
             perror("Selection err\n");
             exit(-1);
@@ -130,27 +133,32 @@ void clientLoop(int sockFd, char *handle, client *others, int *numClients, int *
         if (FD_ISSET(sockFd, &serverSet)) {
             toExit = recvFromServer(sockFd);
         } 
-        */
-
+        if (FD_ISSET(STDIN_FILENO, &serverSet)) {
+            sendToServer(sockFd, handle, others, numClients, maxClients);
+        }
+        /*
         toExit = recvFromServer(sockFd);
         sendToServer(sockFd, handle, others, numClients, maxClients);
+        */
     } 
 }
 
 int recvFromServer(int sockFd) {
-	char recvBuf[MAXBUF];   //data buffer
+    printf("Receive called\n");
+	char recvBuf[MAXBUF];//data buffer
     int toExit = 0;
-    int recvBytes = recv(sockFd, recvBuf, MAXBUF, MSG_DONTWAIT); 
-
+    int recvBytes = recv(sockFd, recvBuf, MAXBUF, 0); 
+    /*
     if (errno == EWOULDBLOCK || errno == EAGAIN) {
         printf("errno trapped\n");
         return toExit;
-    } 	
-    else if(recvBytes < 0) {
+    }	
+    */
+    if(recvBytes < 0) {
         perror("Recv Error\n");
         return toExit;
     }
-    printf("Recieved Something\n");
+    printf("Recieved Something, flag = %d\n", recvBuf[2]);
     switch ((recvBuf[2])) {
         case 5: //Message Success
             mRecv(recvBuf); 
@@ -175,6 +183,7 @@ void mRecv(char *recvBuf) {
     char printBuf[len];
     memcpy(printBuf, recvBuf + 3, len - 3);
     printBuf[len - 2] = '\0';
+    printf("Printing out the message: \n");
     printf("%s\n", printBuf);
 }
 
@@ -197,7 +206,7 @@ void sendToServer(int socketNum, char *handle, client *others, int *numClients, 
     //int toExit = 0;
     	
 	//printf("Enter the data to send: ");
-	printf("$");
+	//printf("$");
 	//scanf("%" xstr(MAXBUF) "[^\n]%*[^\n]", sendBuf);
     //scanf("%s", sendBuf);
     fgets(sendBuf, MAXBUF, stdin);
@@ -224,7 +233,7 @@ void sendToServer(int socketNum, char *handle, client *others, int *numClients, 
         default:
             break;
     }
-    fflush(stdin);
+    //fflush(stdin);
     memset(sendBuf, 0, MAXBUF);
     	
 	//sent =  send(socketNum, sendBuf, sendLen, 0);
