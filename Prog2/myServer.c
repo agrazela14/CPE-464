@@ -19,7 +19,7 @@
 #include <arpa/inet.h>
 #include <netdb.h>
 
-//#include "networks.h"
+#include "networks.h"
 #include "myServer.h"
 
 #define MAXBUF 1024
@@ -78,6 +78,7 @@ int checkArgs(int argc, char **argv) {
 }
 */
 
+/*
 int tcpServerSetup(int portNum) {
    int fd = socket(AF_INET, SOCK_STREAM, 0);
    int err;
@@ -115,14 +116,15 @@ int tcpServerSetup(int portNum) {
 
    return fd;
 }
+*/
 
 void readLoop(int servFd) {
     int ndx, used = 0, clients = 10;
     int selection;
     fd_set fds;
     handle *table = malloc(clients * sizeof(handle));
-    struct sockaddr_in clientSock;
-    socklen_t clientSockLen = sizeof(clientSock);
+    //struct sockaddr_in clientSock;
+    //socklen_t clientSockLen = sizeof(clientSock);
 
     while (1) {
         FD_ZERO(&fds);
@@ -142,8 +144,9 @@ void readLoop(int servFd) {
         
         //Check if we are waiting for a new connection
         if (FD_ISSET(servFd, &fds)) {
-            table[used].fd = accept(servFd, 
-             (struct sockaddr *)&clientSock, &clientSockLen);
+            //Using Dr.Smith's code instead
+            table[used].fd =  tcpAccept(servFd, 1);/*accept(servFd, 
+             (struct sockaddr *)&clientSock, &clientSockLen);*/
             table[used].open = 1;
             if (table[used].fd < 0) {
                 perror("Accept Error\n");
@@ -306,7 +309,6 @@ void handleMReq(handle *table, char *recvBuf, int numConnected) {
     //The header
     //The size of the sender
     //The sender
-    //Length of Message
     //The Message
     int ndx, ndx2, sendBytes;
     int totalOffset = 3;
@@ -341,12 +343,12 @@ void handleMReq(handle *table, char *recvBuf, int numConnected) {
                 //send to this handle
                 printf("Sending to %s\n", table[ndx2].handle); 
                 msgLen = recvLen - totalOffset;
-                packetLen += msgLen + 1;
+                packetLen += msgLen;
                 createHeader(packet, packetLen, 5);//header
                 
                 //After 3 byte header, 1 byte senderLengthField, and the length of the sender
-                memcpy(packet + 4 + senderLen, &msgLen, 1);//msg length
-                memcpy(packet + 5 + senderLen, recvBuf + totalOffset, msgLen);//msg
+                //memcpy(packet + 4 + senderLen, &msgLen, 1);//msg length
+                memcpy(packet + 4 + senderLen, recvBuf + totalOffset, msgLen);//msg
 
                 sendBytes = send(table[ndx2].fd, 
                  packet, packetLen, 0);
@@ -412,9 +414,11 @@ void handleEReq(handle *table, char *buf, char *senderHandle) {
 
 }
 
+/*
 int tcpAccept(int serverSock, int debug) {
     return 0;     
 }
+*/
 
 void recvFromClient(int clientSocket)
 {

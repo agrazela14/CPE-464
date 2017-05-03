@@ -4,7 +4,7 @@
 CC= gcc
 CFLAGS= -g -Wall
 LIBS =  
-OFILES = #networks.o gethostbyname6.o 
+OFILES = gethostbyname6.o networks.o 
 
 #append a 32 to executable name if on a 32 bit machine
 FILE =  

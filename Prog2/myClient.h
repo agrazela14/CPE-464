@@ -10,7 +10,7 @@ typedef struct {
 
 int main(int argc, char * argv[]);
 
-int tcpClientSetup(char *handle, char *serverName, int serverPort, int flags);
+//int tcpClientSetup(char *handle, char *serverName, int serverPort, int flags);
 
 void initialPacket(char *handle, int fd);
 
@@ -44,6 +44,6 @@ void lCommand();
 
 void eCommand();
 
-void checkArgs(int argc, char * argv[], char *handle, char *serverName, int *port);
+void checkArgs(int argc, char * argv[], char *handle, char *serverName, char *port);
 
 #endif

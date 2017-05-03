@@ -37,9 +37,9 @@ int tcpServerSetup(int portNumber)
 		exit(1);
 	}
 
-	server.sin6_family= AF_INET6;         		
+	server.sin6_family = AF_INET6;         		
 	server.sin6_addr = in6addr_any;   //wild card machine address
-	server.sin6_port= htons(portNumber);         
+	server.sin6_port = htons(portNumber);         
 
 	/* bind the name (address) to a port */
 	if (bind(server_socket, (struct sockaddr *) &server, sizeof(server)) < 0)
@@ -73,7 +73,7 @@ int tcpAccept(int server_socket, int debugFlag)
 {
 	struct sockaddr_in6 clientInfo;   
 	int clientInfoSize = sizeof(clientInfo);
-	int client_socket= 0;
+	int client_socket = 0;
 
 	if ((client_socket = accept(server_socket, (struct sockaddr*) &clientInfo, (socklen_t *) &clientInfoSize)) < 0)
 	{
@@ -113,6 +113,7 @@ int tcpClientSetup(char * serverName, char * port, int debugFlag)
 	// get the address of the server 
 	if ((ipAddress = getIPAddress6(serverName, &server)) == NULL)
 	{
+        perror("Couldn't get ip Address\n");
 		exit(-1);
 	}
 

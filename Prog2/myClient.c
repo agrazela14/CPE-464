@@ -21,7 +21,7 @@
 #include <arpa/inet.h>
 #include <netdb.h>
 
-//#include "networks.h"
+#include "networks.h"
 #include "myClient.h"
 
 #define MAXBUF 1024
@@ -36,12 +36,14 @@ int main(int argc, char * argv[])
 	int socketNum = 0;         //socket descriptor
     char handle[HANDLE_LEN];
     char serverName[HANDLE_LEN];
-    int serverPort, numClients = 0, tableSize = 10;
+    char serverPort[MAXBUF];
+    int numClients = 0, tableSize = 10;
+    
     client *others = malloc(tableSize * sizeof(client));
 
-    checkArgs(argc, argv, handle, serverName, &serverPort);
+    checkArgs(argc, argv, handle, serverName, serverPort);
 	/* set up the TCP Client socket  */
-	socketNum = tcpClientSetup(handle, serverName, serverPort, DEBUG_FLAG);
+	socketNum = tcpClientSetup(serverName, serverPort, DEBUG_FLAG);
 	
 	clientLoop(socketNum, handle, others, &numClients, &tableSize);
 	
@@ -50,14 +52,17 @@ int main(int argc, char * argv[])
 	
 	return 0;
 }
-
+/*
 int tcpClientSetup(char *handle, char *serverName, int serverPort, int flags) {
     int fd, err;
     struct sockaddr_in addr;
+    uint8_t IP;
     fd = socket(AF_INET, SOCK_STREAM, 0);
-
+    //Don't give an IP address, give a name
+    //then use provided gethostbyname function to set IP address
+    IP = gethostbyname(serverName);
     addr.sin_family = AF_INET;
-    inet_aton(serverName, &(addr.sin_addr/*.s_addr*/));//Give an IP Address
+    addr.sin_addr = IP;
     addr.sin_port = htons(serverPort);//Give port num, 0 (default) for os to assign
 
 
@@ -76,7 +81,7 @@ int tcpClientSetup(char *handle, char *serverName, int serverPort, int flags) {
     initialPacket(handle, fd);
     return fd;
 }
-
+*/
 void initialPacket(char *handle, int fd) {
     char packet[MAXBUF];
     char reply[MAXBUF];
@@ -301,17 +306,17 @@ int mCommand(char *buf, char *handle, int fd) {
         token = strtok(NULL, " ");
     } 
 
-    *packetTemp = strlen(handle);
+    *packetTemp = (char)strlen(handle);//SenderLen
     packetTemp++;
-    memcpy(packetTemp, handle, strlen(handle));
+    memcpy(packetTemp, handle, strlen(handle));//Sender
     packetTemp += strlen(handle);
-    *packetTemp = numHandles;
+    *packetTemp = numHandles;//Num Targets
     packetTemp++;
 
     for (ndx = 0; ndx < numHandles; ndx++) {
-        *packetTemp = strlen(handles[ndx]);
+        *packetTemp = strlen(handles[ndx]);//This Dest Len
         packetTemp++;
-        memcpy(packetTemp, handles[ndx], strlen(handles[ndx]));
+        memcpy(packetTemp, handles[ndx], strlen(handles[ndx]));//This Destin handle
         packetTemp += strlen(handles[ndx]);
     }
     
@@ -340,7 +345,7 @@ void sendMessage(int fd, char *msgStart, char *packet, char *msg, int bytes) {
     printf("sending Message\n");
     createHeader(packet, len, 5);
     memcpy(msgStart, msg, bytes);
-    sent = send(fd, packet, len, MSG_DONTWAIT);
+    sent = send(fd, packet, len, 0 /*MSG_DONTWAIT*/);
     printf("Sent %d Bytes\n", sent);
     if (sent != len) {
         fprintf(stderr, "Send didn't send right amount %d, sent %d instead\n",
@@ -423,7 +428,7 @@ void eCommand() {
 
 }
 
-void checkArgs(int argc, char * argv[], char *handle, char *serverName, int *port)
+void checkArgs(int argc, char * argv[], char *handle, char *serverName, char *port)
 {
 	/* check command line arguments  */
 	if (argc != 4)
@@ -438,7 +443,6 @@ void checkArgs(int argc, char * argv[], char *handle, char *serverName, int *por
     }
     strcpy(handle, argv[1]);
     strcpy(serverName, argv[2]);
-    *port = atoi(argv[3]);
+    strcpy(port, argv[3]);
+    //*port = atoi(argv[3]);
 }
-
-

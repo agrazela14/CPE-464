@@ -11,7 +11,7 @@ typedef struct {
 
 int main(int argc, char *argv[]);
 
-int tcpServerSetup(int portNum);
+//int tcpServerSetup(int portNum);
 
 void readLoop(int servFd);
 
@@ -25,7 +25,7 @@ void handleLReq(handle *table, int ndx);
 
 void handleEReq(handle *table, char *buf, char *senderHandle);
 
-int tcpAccept(int serverSock, int debug);
+//int tcpAccept(int serverSock, int debug);
 
 void recvFromClient(int clientSocket);
 
