@@ -44,6 +44,7 @@ int main(int argc, char * argv[])
     checkArgs(argc, argv, handle, serverName, serverPort);
 	/* set up the TCP Client socket  */
 	socketNum = tcpClientSetup(serverName, serverPort, DEBUG_FLAG);
+    initialPacket(handle, socketNum);
 	
 	clientLoop(socketNum, handle, others, &numClients, &tableSize);
 	
@@ -178,7 +179,7 @@ int recvFromServer(int sockFd) {
     printf("Recieved Something, flag = %d\n", recvBuf[0]);
     switch ((recvBuf[0])) {
         case 5: //Message Success
-            mRecv(recvBuf + 1, recvLen - 3); 
+            mRecv(recvBuf + 1); 
             break;
         case 7: //Message Failure
             mFailure(recvBuf);
@@ -195,22 +196,28 @@ int recvFromServer(int sockFd) {
     return toExit;
 }
 
-void mRecv(char *recvBuf, int bytes) {
-    char printBuf[bytes];
+void mRecv(char *recvBuf) {
+    char printBuf[MAXBUF];
     char sender[MAXHANDLE];
     char senderLen;
-    char msgLen;
+    short packetLen;
 
+    //Packet recv should be:
+    //Header
+    //SenderLen
+    //Sender
+    //Msg
+    packetLen = ntohs(*(short *)(recvBuf));
+    recvBuf += 3;
     memcpy(&senderLen, recvBuf++, 1);
     memcpy(sender, recvBuf, senderLen);
     recvBuf += senderLen;
     //Now see if it's on the blocked list
     //But add that function later
     
-    memcpy(&msgLen, recvBuf++, 1);
-    memcpy(printBuf, recvBuf, msgLen);
+    memcpy(printBuf, recvBuf, packetLen - 4 - senderLen);
 
-    printBuf[(int)msgLen] = '\0';
+    printBuf[packetLen] = '\0';
     printf("Printing out the message: \n");
     printf("%s\n", printBuf);
 }

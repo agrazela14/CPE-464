@@ -321,7 +321,8 @@ void handleMReq(handle *table, char *recvBuf, int numConnected) {
     char packet[MAXBUF];
     target targets[MAXDEST];
     
-    recvLen = ntohs(*recvBuf); 
+    printf("Recv M command\n");
+    recvLen = ntohs(*(short *)(recvBuf)); 
     senderLen = *(recvBuf + totalOffset++);
     memcpy(packet + 3, &senderLen, 1);//sender size
     memcpy(packet + 4, recvBuf + totalOffset, senderLen);//sender
@@ -333,18 +334,27 @@ void handleMReq(handle *table, char *recvBuf, int numConnected) {
         targets[ndx].handleLen = *(recvBuf + totalOffset++);
         memcpy(targets[ndx].handle, recvBuf + totalOffset, targets[ndx].handleLen);
         targets[ndx].handle[(int)targets[ndx].handleLen] = '\0';
+        printf("target found: %s\n", targets[ndx].handle);
         totalOffset += targets[ndx].handleLen;
     }
-        //Now the total Offset should lead to the actual message
-
+    //Now the total Offset should lead to the actual message
+     
     for (ndx = 0; ndx < numDest; ndx++) {
         for (ndx2 = 0; ndx2 < numConnected; ndx2++) {
+            printf("table holds: %s\n", table[ndx2].handle); 
             if (strcmp(table[ndx2].handle, targets[ndx].handle) == 0) {
+                //Send:
+                //Header
+                //Sender Len
+                //Sender handle
+                //Msg, it'll know msg len by header
                 //send to this handle
                 printf("Sending to %s\n", table[ndx2].handle); 
                 msgLen = recvLen - totalOffset;
                 packetLen += msgLen;
                 createHeader(packet, packetLen, 5);//header
+                memcpy(packet + 3, &senderLen, 1);//Sender Len
+                memcpy(packet + 4, table[ndx2].handle, senderLen);//Sender
                 
                 //After 3 byte header, 1 byte senderLengthField, and the length of the sender
                 //memcpy(packet + 4 + senderLen, &msgLen, 1);//msg length

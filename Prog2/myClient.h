@@ -20,7 +20,7 @@ void clientLoop(int sockFd, char *handle, client *others, int *numClients, int *
 
 int recvFromServer(int sockFd);
 
-void mRecv(char *recvBuf, int bytes);
+void mRecv(char *recvBuf);
 
 void mFailure(char *recvBuf);
 
