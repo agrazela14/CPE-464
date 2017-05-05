@@ -5,6 +5,7 @@
 
 typedef struct {
     int blocked;
+    char len;
     char handle[MAXHANDLE];
 } client;
 
@@ -20,7 +21,7 @@ void clientLoop(int sockFd, char *handle, client *others, int *numClients, int *
 
 int recvFromServer(int sockFd);
 
-void mRecv(char *recvBuf);
+void mRecv(char *recvBuf, short packetLen);
 
 void mFailure(char *recvBuf);
 

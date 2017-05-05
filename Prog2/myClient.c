@@ -165,12 +165,13 @@ int recvFromServer(int sockFd) {
     */
     //Get the length of the incoming packet
     recvBytes = recv(sockFd, &recvLen, 2, MSG_WAITALL);
-    if (recvBytes != 2) {
-        perror("Wrong # bytes received\n");
-    }
+    //if (recvBytes != 2) {
+    printf("Recv %d bytes\n", recvBytes);
+    //}
 
     recvLen = ntohs(recvLen);
     recvBytes = recv(sockFd, recvBuf, recvLen - 2, MSG_WAITALL);
+    printf("Recv %d bytes\n", recvBytes);
 
     if (recvBytes != recvLen) {
         perror("Wrong # bytes received\n");
@@ -179,7 +180,7 @@ int recvFromServer(int sockFd) {
     printf("Recieved Something, flag = %d\n", recvBuf[0]);
     switch ((recvBuf[0])) {
         case 5: //Message Success
-            mRecv(recvBuf + 1); 
+            mRecv(recvBuf + 1, recvLen); 
             break;
         case 7: //Message Failure
             mFailure(recvBuf);
@@ -196,30 +197,37 @@ int recvFromServer(int sockFd) {
     return toExit;
 }
 
-void mRecv(char *recvBuf) {
+void mRecv(char *recvBuf, short packetLen) {
     char printBuf[MAXBUF];
     char sender[MAXHANDLE];
     char senderLen;
-    short packetLen;
+    int ndx;
 
     //Packet recv should be:
     //Header
     //SenderLen
     //Sender
     //Msg
-    packetLen = ntohs(*(short *)(recvBuf));
-    recvBuf += 3;
+    //packetLen = ntohs(*(short *)(recvBuf));
+    printf("Recv Packet Len: %hd\n", packetLen);
+    //recvBuf += 3;
     memcpy(&senderLen, recvBuf++, 1);
     memcpy(sender, recvBuf, senderLen);
+    sender[(int)senderLen] = '\0';
+    printf("Recv senderLen: %c, Recv Sender: %s\n", senderLen, sender);
     recvBuf += senderLen;
     //Now see if it's on the blocked list
     //But add that function later
     
     memcpy(printBuf, recvBuf, packetLen - 4 - senderLen);
 
-    printBuf[packetLen] = '\0';
-    printf("Printing out the message: \n");
-    printf("%s\n", printBuf);
+    printBuf[packetLen - 4 - senderLen] = '\0';
+    printf("Printing out the message: 1 FUCKING BYTE AT A TIME\n");
+    printf("Strlen Printbuf = %d\n", strlen(printBuf));
+    for (ndx = 0; ndx < strlen(printBuf); ndx++) {
+        printf("%c", printBuf[ndx]);
+    }
+    printf("\n");
 }
 
 void mFailure(char *recvBuf) {
@@ -285,41 +293,80 @@ void sendToServer(int socketNum, char *handle, client *others, int *numClients, 
     //return toExit;
 }
 
-int mCommand(char *buf, char *handle, int fd) {
+int mCommand(char *buf, char *sender, int fd) {
+    //Remake this function by taking the strlen
+    //Of the buf, then adding up strlen token + 1 each token
+    //That will get the offset to reach the actual message 
     char packet[MAXBUF];
-    char *packetTemp = packet + 3;
+    int msgOffset = 0; //This will eventually reach the message
+    short totalLen = 3;
+    //char *packetTemp = packet + 3;
     char *endPtr;
     char numHandles = strtol(buf + 2, &endPtr, 10);
     char *token;
-    char handles[MAXTARGETS][MAXHANDLE];
-    char *message;
-    int nonMsgLen, msgParts, msgLen, ndx;
+    client handles[MAXTARGETS];
+    char message[MAXBUF];
+    char senderLen = strlen(sender);
+    //int nonMsgLen, msgParts, msgLen; 
+    int ndx, sendBytes, msgLen;
     
-    token = strtok(buf, " ");
+    token= strtok(buf, " ");
+    msgOffset += strlen(token) + 1;
+    printf("Token : %s, len: %d\n", token, (int)strlen(token));
     //Skip the %M
-    token = strtok(NULL, " ");
+    //token = strtok(NULL, " ");
     //Maybe skip a number
     if (numHandles != 0) {
         token = strtok(NULL, " ");
+        printf("Token : %s, len: %d\n", token, (int)strlen(token));
+        msgOffset += strlen(token) + 1;
     }
     else {
         numHandles = 1;
     } 
     
-    seekMessage(&message, buf, numHandles); //message here might need to be a double pointer
+    //seekMessage(&message, buf, numHandles); //message here might need to be a double pointer
     for (ndx = 0; ndx < numHandles; ndx++) {
-        printf("token: %s\n", token);
-        strcpy(handles[ndx], token);
         token = strtok(NULL, " ");
+        printf("Token : %s, len: %d\n", token, (int)strlen(token));
+        strcpy(handles[ndx].handle, token);
+        handles[ndx].len = (char)strlen(token);
+        msgOffset += strlen(token) + 1;
     } 
+    //memcpy(message, token + 1, buf + strlen(buf) - token);
+    if (strlen(buf + msgOffset) > MAXBUF) {
+        fprintf(stderr, "Message too long\n");
+        return -1;
+    }
+    printf("Message offset = %d\n", msgOffset);
+    msgLen = strlen(buf + msgOffset);
+    memcpy(message, buf + msgOffset, msgLen);  
+    memcpy(packet + totalLen++, &senderLen, 1);
+    memcpy(packet + totalLen, sender, senderLen); 
+    totalLen += senderLen;
+    memcpy(packet + totalLen++, &numHandles, 1);
 
+    for (ndx = 0; ndx < numHandles; ndx++) {
+        memcpy(packet + totalLen++, &handles[ndx].len, 1); 
+        memcpy(packet + totalLen, handles[ndx].handle, handles[ndx].len);
+        totalLen += handles[ndx].len;
+    }
+
+    //Now potentially break up the message
+    //Actually fuck that for now  
+    memcpy(packet + totalLen, message, msgLen);
+    totalLen += msgLen;
+    createHeader(packet, totalLen, 5);
+    sendBytes = send(fd, packet, totalLen, 0); 
+    printf("Sent %d Bytes, should have sent %d\n", sendBytes, totalLen);
+    /*
     *packetTemp = (char)strlen(handle);//SenderLen
     packetTemp++;
     memcpy(packetTemp, handle, strlen(handle));//Sender
     packetTemp += strlen(handle);
     *packetTemp = numHandles;//Num Targets
     packetTemp++;
-
+    
     for (ndx = 0; ndx < numHandles; ndx++) {
         *packetTemp = strlen(handles[ndx]);//This Dest Len
         packetTemp++;
@@ -334,15 +381,17 @@ int mCommand(char *buf, char *handle, int fd) {
     }
     msgParts = (nonMsgLen <= 800) ? 200 : 1000 - nonMsgLen;
     msgLen = strlen(message);
+    printf("Message = %s, length of that is %d\n", message, msgLen);
     //Now taking everything that's already in the header, we need to send
     //Possibly successive messages of at most 200 bytes 
     
     for (ndx = 0; ndx < ((msgLen / msgParts) > 1 ? msgLen / msgParts : 1); ndx++) {
-        sendMessage(fd, packetTemp, packet, message, 
+        sendMessage(fd, packetTemp, packet, message + ndx * msgParts, 
          (msgLen - ndx * msgParts < msgParts) 
          ? msgLen - ndx * msgParts : msgParts);
-        message += msgParts; 
+        //message += msgParts; 
     }
+    */
     return 0;
 }
 
@@ -362,7 +411,7 @@ void sendMessage(int fd, char *msgStart, char *packet, char *msg, int bytes) {
 }
 
 void seekMessage(char **msg, char *buf, int numHandles) {
-    int cycles = numHandles + 1;
+    int cycles = numHandles;
     int ndx;
 
     if (numHandles != 1) {

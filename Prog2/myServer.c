@@ -23,6 +23,7 @@
 #include "myServer.h"
 
 #define MAXBUF 1024
+#define MAXMSG 200 
 #define MAXDEST 9 
 //#define HANDLE_LEN 256
 #define DEBUG_FLAG 1
@@ -35,12 +36,12 @@ typedef struct {
     int clientFD;
     char handle[HANDLE_LEN];
 } handle;
-*/
 
 typedef struct {
-    char handleLen;
+    char len;
     char handle[HANDLE_LEN];
 }target;
+*/
 
 int main(int argc, char *argv[])
 {
@@ -310,6 +311,79 @@ void handleMReq(handle *table, char *recvBuf, int numConnected) {
     //The size of the sender
     //The sender
     //The Message
+
+    target targets[MAXDEST]; 
+    char msg[MAXMSG];
+    char numDest;
+    char sender[HANDLE_LEN];
+    char senderLen;
+    int msgLen, ndx;
+    
+    //Put into the targets, numDest and msg all the approiate things 
+    mParse(targets, &numDest, msg, sender, &senderLen, recvBuf, &msgLen);
+    for (ndx = 0; ndx < numDest; ndx++) {
+        //This function just sends to 1 target
+        mReply(table, targets[ndx], msg, sender, senderLen, numConnected, msgLen);
+    }
+}    
+
+void mParse(target *targets, char *numDest, 
+ char *msg, char *sender, char *senderLen, char *recvBuf, int *msgLen) {
+    //Recv: header
+    //sender len
+    //sender
+    //numdest
+    //len then dest for each numdest
+    //msg
+    //char packet[MAXBUF];
+    short recvLen;
+    int totalOffset = 3, ndx;
+    
+    recvLen = ntohs(*(short *)(recvBuf)); 
+    *senderLen = *(recvBuf + totalOffset++);
+    memcpy(sender, recvBuf + totalOffset, *senderLen); 
+    totalOffset += *senderLen;
+    *numDest = *(recvBuf + totalOffset++);
+
+    for (ndx = 0; ndx < *numDest; ndx++) {
+        memcpy(&(targets[ndx].len), recvBuf + totalOffset++, 1); 
+        memcpy((targets[ndx].handle), recvBuf + totalOffset, targets[ndx].len); 
+        targets[ndx].handle[(int)targets[ndx].len] = '\0'; 
+        totalOffset += targets[ndx].len;
+    }
+
+    memcpy(msg, recvBuf + totalOffset, recvLen - totalOffset);
+    *msgLen = recvLen - totalOffset;
+
+}
+//Header
+//Sender Len
+//Sender
+//Message
+void mReply(handle *table, target trg, char *msg, char *sender, char senderLen, 
+ int tblSize, int msgLen){
+    int ndx, totalOffset = 3, sendBytes;
+    char packet[MAXBUF];
+
+    for (ndx = 0; ndx < tblSize; ndx++) {
+        if (strcmp(table[ndx].handle, trg.handle) == 0) {
+            createHeader(packet, msgLen + senderLen + 4, 5);
+            memcpy(packet + totalOffset++, &senderLen, 1);
+            memcpy(packet + totalOffset, sender, senderLen);
+            totalOffset += senderLen;
+            memcpy(packet + totalOffset, msg, msgLen);
+            sendBytes = send(table[ndx].fd, packet, msgLen + senderLen + 4, 0);
+            if (sendBytes != msgLen + senderLen + 4) {
+                perror("Send err in M reply\n");
+            }
+            msg[msgLen] = '\0';
+            printf("Sent %s\n", msg);
+            printf("Sent %d, shoulda been %d\n", sendBytes, msgLen + senderLen + 4);
+        }
+    } 
+} 
+    //Remake this as 2 functions
+    /*
     int ndx, ndx2, sendBytes;
     int totalOffset = 3;
     char senderLen;
@@ -372,6 +446,7 @@ void handleMReq(handle *table, char *recvBuf, int numConnected) {
         }
     }
 }
+*/
 /*
     //Send the message in as many packets as necessary to the targets
     char *endptr;

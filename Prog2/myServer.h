@@ -9,6 +9,11 @@ typedef struct {
     char handle[HANDLE_LEN];
 } handle;
 
+typedef struct {
+    char len;
+    char handle[HANDLE_LEN];
+}target;
+
 int main(int argc, char *argv[]);
 
 //int tcpServerSetup(int portNum);
@@ -20,6 +25,12 @@ void createHeader(char *packet, short len, char flag);
 void tcpRecv(handle *table, int recvNdx, int numConnected);
 
 void handleMReq(handle *table, char *recvBuf, int numConnected);
+
+void mParse(target *targets, char *numDest, 
+ char *msg, char *sender, char *senderLen, char *recvBuf, int *msgLen);
+
+void mReply(handle *table, target trg, char *msg, char *sender, char senderLen, 
+ int tblSize, int msgLen);
 
 void handleLReq(handle *table, int ndx);
 
