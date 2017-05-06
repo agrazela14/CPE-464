@@ -11,17 +11,15 @@ typedef struct {
 
 int main(int argc, char * argv[]);
 
-//int tcpClientSetup(char *handle, char *serverName, int serverPort, int flags);
-
 void initialPacket(char *handle, int fd);
 
 void createHeader(char *packet, short len, char flag);
 
-void clientLoop(int sockFd, char *handle, client *others, int *numClients, int *maxClients);
+void clientLoop(int sockFd, char *handle, client *block, int *numClients, int *maxClients);
 
-int recvFromServer(int sockFd);
+int recvFromServer(int sockFd, client *block, int *numClients);
 
-void mRecv(char *recvBuf, short packetLen);
+void mRecv(char *recvBuf, short packetLen, client *block, int *numClients);
 
 void mFailure(char *recvBuf);
 
@@ -29,17 +27,17 @@ int eRecv();
 
 void lRecv();
 
-void sendToServer(int socketNum, char *handle, client *others, int *numClients, int *maxClients);
+void sendToServer(int socketNum, char *handle, client *block, int *numClients, int *maxClients);
 
-int mCommand(char *buf, char *handle, int fd);
+int mCommand(char *buf, char *sender, int fd);
 
 void sendMessage(int fd, char *msgStart, char *packet, char *msg, int bytes);
 
 void seekMessage(char **msg, char *buf, int numHandles);
 
-void bCommand(char *buf, client *clients, int *numClients, int *maxClients);
+void bCommand(char *buf, client *block, int *numClients, int *maxClients);
 
-void uCommand(char *buf, client *clients, int *numClients, int *maxClients);
+void uCommand(char *buf, client *block, int *numClients, int *maxClients);
 
 void lCommand();
 

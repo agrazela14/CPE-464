@@ -39,17 +39,17 @@ int main(int argc, char * argv[])
     char serverPort[MAXBUF];
     int numClients = 0, tableSize = 10;
     
-    client *others = malloc(tableSize * sizeof(client));
+    client *block = malloc(tableSize * sizeof(client));
 
     checkArgs(argc, argv, handle, serverName, serverPort);
 	/* set up the TCP Client socket  */
 	socketNum = tcpClientSetup(serverName, serverPort, DEBUG_FLAG);
     initialPacket(handle, socketNum);
 	
-	clientLoop(socketNum, handle, others, &numClients, &tableSize);
+	clientLoop(socketNum, handle, block, &numClients, &tableSize);
 	
 	close(socketNum);
-    free(others);
+    free(block);
 	
 	return 0;
 }
@@ -120,7 +120,7 @@ void createHeader(char *packet, short len, char flag) {
     packet[2] = flag;
 } 
 
-void clientLoop(int sockFd, char *handle, client *others, int *numClients, int *maxClients) {
+void clientLoop(int sockFd, char *handle, client *block, int *numClients, int *maxClients) {
     int toExit = 0; 
     int toRead;
     fd_set serverSet;
@@ -139,19 +139,18 @@ void clientLoop(int sockFd, char *handle, client *others, int *numClients, int *
         }
         
         if (FD_ISSET(sockFd, &serverSet)) {
-            toExit = recvFromServer(sockFd);
+            toExit = recvFromServer(sockFd, block, numClients);
         } 
         if (FD_ISSET(STDIN_FILENO, &serverSet)) {
-            sendToServer(sockFd, handle, others, numClients, maxClients);
+            sendToServer(sockFd, handle, block, numClients, maxClients);
         }
         /*
         toExit = recvFromServer(sockFd);
         sendToServer(sockFd, handle, others, numClients, maxClients);
         */
     } 
-}
-
-int recvFromServer(int sockFd) {
+} 
+int recvFromServer(int sockFd, client *block, int *numClients) {
     printf("Receive called\n");
 	char recvBuf[MAXBUF];//data buffer
     short recvLen;
@@ -180,7 +179,7 @@ int recvFromServer(int sockFd) {
     printf("Recieved Something, flag = %d\n", recvBuf[0]);
     switch ((recvBuf[0])) {
         case 5: //Message Success
-            mRecv(recvBuf + 1, recvLen); 
+            mRecv(recvBuf + 1, recvLen, block, numClients); 
             break;
         case 7: //Message Failure
             mFailure(recvBuf);
@@ -197,7 +196,7 @@ int recvFromServer(int sockFd) {
     return toExit;
 }
 
-void mRecv(char *recvBuf, short packetLen) {
+void mRecv(char *recvBuf, short packetLen, client *block, int *numClients) {
     char printBuf[MAXBUF];
     char sender[MAXHANDLE];
     char senderLen;
@@ -214,6 +213,14 @@ void mRecv(char *recvBuf, short packetLen) {
     memcpy(&senderLen, recvBuf++, 1);
     memcpy(sender, recvBuf, senderLen);
     sender[(int)senderLen] = '\0';
+    for (ndx = 0; ndx < *numClients; ndx++) {
+        if (strcmp(block[ndx].handle, sender) == 0) {
+            if (block[ndx].blocked) {
+                printf("Sender %s is Blocked\n", sender);
+                return;
+            }
+        }
+    }
     printf("Recv senderLen: %c, Recv Sender: %s\n", senderLen, sender);
     recvBuf += senderLen;
     //Now see if it's on the blocked list
@@ -242,7 +249,7 @@ void lRecv() {
 
 }
 
-void sendToServer(int socketNum, char *handle, client *others, int *numClients, int *maxClients)
+void sendToServer(int socketNum, char *handle, client *block, int *numClients, int *maxClients)
 {
 	char sendBuf[MAXBUF];   //data buffer
 	int sendLen = 0;        //amount of data to send
@@ -262,10 +269,10 @@ void sendToServer(int socketNum, char *handle, client *others, int *numClients, 
             mCommand(sendBuf, handle, socketNum); 
             break;
         case 'B':
-            bCommand(sendBuf, others, numClients, maxClients);
+            bCommand(sendBuf, block, numClients, maxClients);
             break;
         case 'U':
-            uCommand(sendBuf, others, numClients, maxClients);
+            uCommand(sendBuf, block, numClients, maxClients);
             break;
         case 'L':
             lCommand();
@@ -430,50 +437,82 @@ void seekMessage(char **msg, char *buf, int numHandles) {
     }
 }
 
-void bCommand(char *buf, client *clients, int *numClients, int *maxClients) {
-    int found, ndx;
+void bCommand(char *buf, client *block, int *numClients, int *maxClients) {
+    int found = 0, ndx;
     char banHandle[MAXHANDLE];
-
+    
+    printf("There are %d clients on the ban list\n", *numClients);
     if (*numClients >= *maxClients) {
         *maxClients *= 2;
-        clients = realloc(clients, *maxClients * sizeof(client));
+        block = realloc(block, *maxClients * sizeof(client));
     } 
     buf += 2;
     while (*buf == ' ') {
         buf++;
     }
     strcpy(banHandle, buf); 
+    banHandle[strlen(banHandle) - 1] = '\0';
+    printf("Ban Handle = %s\n", banHandle);
     if (strlen(banHandle) != 0) {
         for (ndx = 0; ndx < *numClients; ndx++) { 
-            if (strcmp(clients[ndx].handle, banHandle)) {
-                if (clients[ndx].blocked) {
+            if (strcmp(block[ndx].handle, banHandle) == 0) {
+                if (block[ndx].blocked) {
                     fprintf(stderr, "Block Failed, handle %s is already blocked\n"
                      , banHandle);
                 }
                 else {
-                    clients[ndx].blocked = 1;
+                    block[ndx].blocked = 1;
                 }
                 found = 1;
                 break;
             }
         }
-        if (!found) {
+        /*
+        if (*numClients == 0) {
             (*numClients)++;
-            strcpy(clients[*numClients].handle, banHandle);
-            clients[*numClients].blocked = 1;
+            block[*numClients].blocked = 1;
+            strcpy(block[*numClients].handle, banHandle);
+        }
+        */
+        if (!found) {
+            strcpy(block[*numClients].handle, banHandle);
+            printf("Banned %s\n", block[*numClients].handle);
+            block[*numClients].blocked = 1;
+            (*numClients)++;
         }
     }
-
+    else {
+        fprintf(stderr, "No handle to ban provided\n");
+    }
+    
     printf("List of Blocked Users: \n");
     for (ndx = 0; ndx < *numClients; ndx++) { 
-        if (clients[ndx].blocked == 1) {
-            printf("%s\n", clients[ndx].handle);
+        if (block[ndx].blocked == 1) {
+            printf("%s ", block[ndx].handle);
         }
     }
+    printf("\n");
 }
 
-void uCommand(char *buf, client *clients, int *numClients, int *maxClients) {
+void uCommand(char *buf, client *block, int *numClients, int *maxClients) {
+    int ndx;
+    int found = 0;
+    char unBanHandle[MAXHANDLE];
+    
+    strcpy(unBanHandle, buf + 3);
+    unBanHandle[strlen(buf + 3) - 1] = '\0'; 
 
+    for (ndx = 0; ndx < *numClients; ndx++) {
+        if (strcmp(block[ndx].handle, unBanHandle) == 0) {
+            if (block[ndx].blocked == 1) {
+                block[ndx].blocked = 0; 
+                found = 1;
+            }
+        }
+    }
+    if (!found) {
+        fprintf(stderr, "Unblock Failed, Handle %s is not blocked\n", unBanHandle);
+    }
 }
 
 void lCommand() {
