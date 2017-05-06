@@ -25,7 +25,7 @@ void mFailure(char *recvBuf);
  
 int eRecv();
  
-void lRecv();
+void lRecv(char *buf, int sock);
 
 void sendToServer(int socketNum, char *handle, client *block, int *numClients, int *maxClients);
 

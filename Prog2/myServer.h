@@ -22,8 +22,6 @@ void createHeader(char *packet, short len, char flag);
 
 void tcpRecv(handle *table, int recvNdx, int numConnected);
 
-void handleMReq(handle *table, char *recvBuf, int numConnected, int sendFd);
-
 void mError(char *sender, char senderLen, target *invalid, int sendFd);
 
 void mParse(target *targets, char *numDest, 
@@ -32,7 +30,9 @@ void mParse(target *targets, char *numDest,
 void mReply(handle *table, target trg, char *msg, char *sender, char senderLen, 
  int tblSize, int msgLen);
 
-void handleLReq(handle *table, int ndx);
+void handleMReq(handle *table, char *recvBuf, int numConnected, int sendFd);
+
+void handleLReq(handle *table, int numConnected, int clientFd);
 
 void handleEReq(int socket, handle *table, int ndx);
 

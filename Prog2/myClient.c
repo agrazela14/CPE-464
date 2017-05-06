@@ -184,10 +184,10 @@ int recvFromServer(int sockFd, client *block, int *numClients) {
             mFailure(recvBuf + 1);
             break;
         case 9: //Exit
-            toExit = eRecv();
+            toExit = eRecv(recvBuf + 1);
             break;
         case 11: //Start of List
-            lRecv();
+            lRecv(recvBuf + 1, sockFd);
             break;
         default:
             break;
@@ -252,8 +252,45 @@ int eRecv() {
     return 1;
 }
 
-void lRecv() {
+void lRecv(char *buf, int sock) {
+    int numHandles;
+    int ndx;
+    int recvBytes;
+    char flag;
+    short packetLen;
+    char handleLen;
+    char handle[HANDLE_LEN];
+    char recvBuf[HANDLE_LEN];
+    
+    //This takes the flag = 10 call, next is a myriad of 11s  
+    memcpy(&numHandles, buf, 4);        
+    numHandles = ntohl(numHandles);
+    printf("Listing Handles\n");
+    
+    for (ndx = 0; ndx < numHandles; ndx++) {
 
+        recvBytes = recv(sock, &packetLen, 2, MSG_WAITALL); 
+        packetLen = ntohs(packetLen);
+        recvBytes = recv(sock, recvBuf, packetLen - 2, MSG_WAITALL);
+        if (recvBytes != packetLen - 2) {
+            fprintf(stderr, "Didn't receive enough in lrecv\n");
+        }
+
+        flag = recvBuf[0];//We can use to see if we get a 13 too early
+        handleLen = recvBuf[1];
+        memcpy(handle, recvBuf + 2, handleLen); 
+        handle[(int)handleLen] = '\0';
+        printf("%s\n", handle);
+    } 
+
+    recvBytes = recv(sock, &packetLen, 2, MSG_WAITALL); 
+    packetLen = ntohs(packetLen);
+    recvBytes = recv(sock, recvBuf, packetLen - 2, MSG_WAITALL);
+
+    flag = recvBuf[0];//We can use to see if we get a 13 too early
+    if (flag != 13) {
+        printf("Flag isnt 13 when it should be, it's %c\n", flag);
+    }
 }
 
 void sendToServer(int socketNum, char *handle, client *block, int *numClients, int *maxClients) {
@@ -281,7 +318,7 @@ void sendToServer(int socketNum, char *handle, client *block, int *numClients, i
             uCommand(sendBuf, block, numClients, maxClients);
             break;
         case 'L':
-            lCommand();
+            lCommand(socketNum);
             break;
         case 'E':
             eCommand(socketNum);
@@ -521,8 +558,16 @@ void uCommand(char *buf, client *block, int *numClients, int *maxClients) {
     }
 }
 
-void lCommand() {
+void lCommand(int socket) {
+    char packet[3];
+    int sendBytes;
 
+    createHeader(packet, 3, 10);
+    sendBytes = send(socket, packet, 3, 0); 
+
+    if (sendBytes != 3) { 
+        fprintf(stderr, "Error in List sending\n");
+    }
 }
 
 void eCommand(int socket) {
@@ -533,7 +578,7 @@ void eCommand(int socket) {
     sendBytes = send(socket, packet, 3, 0); 
 
     if (sendBytes != 3) { 
-        fprintf(stderr, "Error in Exit sending\n");
+        fprintf(stderr, "Error in List sending\n");
     }
 }
 

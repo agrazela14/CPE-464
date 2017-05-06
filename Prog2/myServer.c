@@ -247,10 +247,6 @@ void tcpRecv(handle *table, int recvNdx, int numConnected) {
             memcpy(table[recvNdx].handle, (recvBuf + 3), packetLen - 3); 
             table[recvNdx].handle[packetLen - 2] = '\0';//null terminate
             createHeader(sendBuf, 3, 2);
-            /*
-            sendBuf[0] = htons(3);
-            sendBuf[2] = 2;
-            */
             sendBytes = send(table[recvNdx].fd, sendBuf, 3, 0); 
             if (sendBytes != 3) {
                 perror("Error sending initial response\n");
@@ -258,39 +254,6 @@ void tcpRecv(handle *table, int recvNdx, int numConnected) {
             break;
         case 5: //Message
             handleMReq(table, recvBuf, numConnected, table[recvNdx].fd);
-            /*
-            totalOffset = 3;
-            senderLen = *(recvBuf + totalOffset++);
-            memcpy(sender, recvBuf + totalOffset, senderLen);
-            totalOffset+= senderLen;
-            numDest = *(recvBuf + totalOffset++);
-            for (ndx = 0; ndx < numDest; ndx++) {
-                targets[ndx].handleLen = *(recvBuf + totalOffset++);
-                memcpy(targets[ndx].handle, recvBuf + totalOffset, targets[ndx].handleLen);
-                targets[ndx].handle[(int)targets[ndx].handleLen] = '\0';
-                totalOffset += targets[ndx].handleLen;
-            }
-            //Now the total Offset should lead to the actual message
-
-            for (ndx = 0; ndx < numDest; ndx++) {
-                for (ndx2 = 0; ndx2 < numConnected; ndx2++) {
-                    if (strcmp(table[ndx2].handle, targets[ndx].handle) == 0) {
-                        //send to this handle
-                        printf("Sending to %s\n", table[ndx2].handle); 
-                        memcpy(sendBuf, recvBuf + totalOffset, packetLen - totalOffset);
-                        sendBytes = send(table[ndx2].fd, 
-                         sendBuf, packetLen - totalOffset, 0);
-
-                        printf("Sent %d Bytes\n", sendBytes);
-
-                        if (sendBytes != packetLen - totalOffset) {
-                            perror("Sent wrong # bytes\n");
-                        }
-                    }
-                }
-            }
-            */
-
             break;
         case 8: //Exit
             //Do after Messaging to 3 clients is done 
@@ -298,6 +261,7 @@ void tcpRecv(handle *table, int recvNdx, int numConnected) {
             break;
         case 10: //List
             //Do after Messaging to 3 clients is done 
+            handleLReq(table, numConnected, table[recvNdx].fd);
             break;
         default:
             break;
@@ -409,117 +373,38 @@ void mReply(handle *table, target trg, char *msg, char *sender, char senderLen,
         }
     } 
 } 
-    //Remake this as 2 functions
-    /*
-    int ndx, ndx2, sendBytes;
-    int totalOffset = 3;
-    char senderLen;
-    int numDest;
-    char msgLen;
-    short recvLen;
-    short packetLen = 3;
-    //char sender[HANDLE_LEN];
+
+void handleLReq(handle *table, int numConnected, int clientFd) {
+    //First get the header only packet with flag 10
+    //Then send numConnected in network order with flag 11
+    //Then for each of those send header, handleLen, handle
+    //Then send header only flag = 13
     char packet[MAXBUF];
-    target targets[MAXDEST];
+    int sendBytes, ndx;
+    int conNOrder;
+    int handleLen;
     
-    printf("Recv M command\n");
-    recvLen = ntohs(*(short *)(recvBuf)); 
-    senderLen = *(recvBuf + totalOffset++);
-    memcpy(packet + 3, &senderLen, 1);//sender size
-    memcpy(packet + 4, recvBuf + totalOffset, senderLen);//sender
-    totalOffset += senderLen;
-    packetLen += senderLen + 1;
+    //Send flag = 11 packet telling how many there are
+    createHeader(packet, 3 + sizeof(int), 11);
+    conNOrder = htonl(numConnected);
+    memcpy(packet + 3, &conNOrder, sizeof(int));
 
-    numDest = *(recvBuf + totalOffset++);
-    for (ndx = 0; ndx < numDest; ndx++) {
-        targets[ndx].handleLen = *(recvBuf + totalOffset++);
-        memcpy(targets[ndx].handle, recvBuf + totalOffset, targets[ndx].handleLen);
-        targets[ndx].handle[(int)targets[ndx].handleLen] = '\0';
-        printf("target found: %s\n", targets[ndx].handle);
-        totalOffset += targets[ndx].handleLen;
-    }
-    //Now the total Offset should lead to the actual message
-     
-    for (ndx = 0; ndx < numDest; ndx++) {
-        for (ndx2 = 0; ndx2 < numConnected; ndx2++) {
-            printf("table holds: %s\n", table[ndx2].handle); 
-            if (strcmp(table[ndx2].handle, targets[ndx].handle) == 0) {
-                //Send:
-                //Header
-                //Sender Len
-                //Sender handle
-                //Msg, it'll know msg len by header
-                //send to this handle
-                printf("Sending to %s\n", table[ndx2].handle); 
-                msgLen = recvLen - totalOffset;
-                packetLen += msgLen;
-                createHeader(packet, packetLen, 5);//header
-                memcpy(packet + 3, &senderLen, 1);//Sender Len
-                memcpy(packet + 4, table[ndx2].handle, senderLen);//Sender
-                
-                //After 3 byte header, 1 byte senderLengthField, and the length of the sender
-                //memcpy(packet + 4 + senderLen, &msgLen, 1);//msg length
-                memcpy(packet + 4 + senderLen, recvBuf + totalOffset, msgLen);//msg
-
-                sendBytes = send(table[ndx2].fd, 
-                 packet, packetLen, 0);
-
-                printf("Sent %d Bytes\n", sendBytes);
-
-                if (sendBytes != packetLen) {
-                    perror("Sent wrong # bytes\n");
-                }
-            }
-        }
-    }
-}
-*/
-/*
-    //Send the message in as many packets as necessary to the targets
-    char *endptr;
-}
-
-//Figure out the arguments needed for these
-void handleMReq(handle *table, char *buf, char *senderHandle) {
-    //Send the message in as many packets as necessary to the targets
-    char *endptr;
-    char **destHandles;
-    long numDest;
-    int ndx;
+    sendBytes = send(clientFd, packet, 3 + sizeof(int), 0);
     
-    buf += 2;
-    while (*buf == ' ') {
-        buf++;
-    }
-    numDest = strtol(buf, &endptr, 10); 
-    if (buf == endptr) {
-        //no numdest given, so it's just gonna be 1
-        numDest = 1;
-    }  
-
-    for (ndx = 0; ndx < numDest; ndx++) {
-        while (*buf == ' ') {
-            buf++;
+    //Send each flag = 12 packet individually
+    for (ndx = 0; ndx < numConnected; ndx++) {
+        handleLen = strlen(table[ndx].handle);
+        createHeader(packet, handleLen + 4, 12);
+        memcpy(packet + 3, &handleLen, 1); 
+        memcpy(packet + 4, table[ndx].handle, handleLen); 
+        sendBytes = send(clientFd, packet, handleLen + 4, 0);
+        if (sendBytes != handleLen + 4) {
+            fprintf(stderr, "Error sending flag = 12 packets\n");
         }
-        while (*buf != ' ') {
-            **destHandles = *buf;
-            buf++;
-            *destHandles++;
-        }
-        **destHandles = '\0';
-        destHandles++;
-    }
-    
-    printf("Sender is %s, Destinations are ", senderHandle);
-    for (ndx = 0; ndx < numDest; ndx++) {
-        printf(" %s ", destHandles[ndx]);
-        printf("\n");
-    }
-    printf("Sender is %s, Destinations are", senderHandle);
-*/
-void handleLReq(handle *table, int ndx) {
-    //Send out all the packets in an 'L' Request 
-    //to the client at the ndx index in table
+    } 
+    //Send the flag = 13 packet that ends it all
+    createHeader(packet, 3, 13);
+    sendBytes = send(clientFd, packet, 3, 0);
 }
 
 void handleEReq(int socket, handle *table, int ndx) {
