@@ -25,106 +25,30 @@
 #define MAXBUF 1024
 #define MAXMSG 200 
 #define MAXDEST 9 
-//#define HANDLE_LEN 256
 #define DEBUG_FLAG 1
 #define BACKLOG_LEN 9
 
-//For holding the handles that exist on the server
-/*
-typedef struct {
-    int open;
-    int clientFD;
-    char handle[HANDLE_LEN];
-} handle;
-
-typedef struct {
-    char len;
-    char handle[HANDLE_LEN];
-}target;
-*/
-
 int main(int argc, char *argv[]) {
 	int serverSocket = 0;   //socket descriptor for the server socket
-	//int clientSocket = 0;   //socket descriptor for the client socket
 	short portNumber;
     
-    //table of handles starts at 10, can be expanded by realloc
-    //handle *table = malloc(10 * sizeof(handle));
-	
 	portNumber = checkArgs(argc, argv);
 	
-	//create the server socket
 	serverSocket = tcpServerSetup(portNumber);
 
-	// wait for client to connect
-	//clientSocket = tcpAccept(serverSocket, DEBUG_FLAG);
-
-	//recvFromClient(clientSocket);
     readLoop(serverSocket);
 	
-	/* close the sockets */
-	//close(clientSocket);
 	close(serverSocket);
     printf("Exited from main\n");
 	return 0;
 }
 
-/*
-int checkArgs(int argc, char **argv) {
-    if (argc > 1) {
-        return atoi(argv[1]);
-    }
-    return 0;
-}
-*/
-
-/*
-int tcpServerSetup(int portNum) {
-   int fd = socket(AF_INET, SOCK_STREAM, 0);
-   int err;
-   int temp;
-   socklen_t addrLen;
-
-   if (fd < 0) {
-       perror("error opening socket\n");
-       exit(fd);
-   }
-   struct sockaddr_in addr;
-   memset(&addr, 0, sizeof(addr));
-   addr.sin_family = AF_INET;
-   addr.sin_addr.s_addr = INADDR_ANY;//Give an IP Address
-   addr.sin_port = htons(portNum);//Give port num, 0 (default) for os to assign
-   addrLen = sizeof(addr);
-   
-   //IDK about this struct
-   err = bind(fd, (struct sockaddr *)&addr, addrLen); 
-   if (err < 0) {
-       perror("error binding socket\n");
-       exit(err);
-   }
-   err = listen(fd, BACKLOG_LEN);
-   if (err < 0) {
-       perror("error listening on socket\n");
-       exit(err);
-   }
-   temp = getsockname(fd, (struct sockaddr *)&addr, &addrLen);
-   if (temp < 0) {
-       perror("getsocketname error\n");
-       exit(-1);
-   }
-   printf("IP is: %s Port Number is: %d\n", inet_ntoa(addr.sin_addr), ntohs(addr.sin_port));
-
-   return fd;
-}
-*/
 
 void readLoop(int servFd) {
     int ndx, used = 0, clients = 10;
     int selection;
     fd_set fds;
     handle *table = malloc(clients * sizeof(handle));
-    //struct sockaddr_in clientSock;
-    //socklen_t clientSockLen = sizeof(clientSock);
 
     while (1) {
         FD_ZERO(&fds);
@@ -135,18 +59,14 @@ void readLoop(int servFd) {
                 FD_SET(table[ndx].fd, &fds);
             }
         }
-        //First parameter is number of FDs
         selection = select(clients + 1, &fds, NULL, NULL, NULL);
         if (selection < 0) {
             perror("Select Error\n");
             exit(-1);
         }
         
-        //Check if we are waiting for a new connection
         if (FD_ISSET(servFd, &fds)) {
-            //Using Dr.Smith's code instead
-            table[used].fd =  tcpAccept(servFd, 1);/*accept(servFd, 
-             (struct sockaddr *)&clientSock, &clientSockLen);*/
+            table[used].fd =  tcpAccept(servFd, 1); 
             table[used].open = 1;
             if (table[used].fd < 0) {
                 perror("Accept Error\n");
@@ -157,38 +77,14 @@ void readLoop(int servFd) {
             }
             used++;
             if (used >= clients) {
-                //resize the table
                 clients *= 2;
                 table = realloc(table, clients * sizeof(handle));
             }
         }
-        //Check to receive data by looking at each client fd
-        //Types of packets that can be sent:
-        //Initial Connection
-        //M
-        //L
-        //E
         for (ndx = 0; ndx < used; ndx++) {
             if (FD_ISSET(table[ndx].fd, &fds)) {
-                //There's a read on this fd
-                //recvBytes = recv(table[ndx].fd, recvBuf, RECVSIZE, /*flags*/);
                 tcpRecv(table, ndx, used);
             }
-            /*
-            if (recvBytes < 0) {
-                perror("Recv Error\n");
-                exit(-1);
-            }
-            if (buf[1].toupper() == 'M') {
-                handleMReq(table, buf, table[ndx].handle);
-            } 
-            else if (buf[1].toupper() == 'L') {
-                handleLReq(table, ndx);
-            }
-            if (buf[1].toupper() == 'E') {
-                handleEReq(table, buf, table[ndx].handle);
-            } 
-            */
         }
     } 
     free(table);
@@ -202,19 +98,10 @@ void createHeader(char *packet, short len, char flag) {
 
 void tcpRecv(handle *table, int recvNdx, int numConnected) {
     char recvBuf[MAXBUF];
-    //int totalOffset;
     int sendBytes;
     int recvBytes;
     short packetLen;
     char flag; 
-    //char senderLen;
-    //char numDest;
-    //char sender[HANDLE_LEN];
-    //char destLens[MAXDEST];
-    //char dests[MAXDEST * HANDLE_LEN + MAXDEST];
-    //char *tempDests = dests;
-    //char *tempBuf = recvBuf;
-    //char *targetHandle;
     char sendBuf[MAXBUF];
 
     memset(recvBuf, 0, MAXBUF);
@@ -256,11 +143,9 @@ void tcpRecv(handle *table, int recvNdx, int numConnected) {
             handleMReq(table, recvBuf, numConnected, table[recvNdx].fd);
             break;
         case 8: //Exit
-            //Do after Messaging to 3 clients is done 
             handleEReq(table[recvNdx].fd, table, recvNdx);
             break;
         case 10: //List
-            //Do after Messaging to 3 clients is done 
             handleLReq(table, numConnected, table[recvNdx].fd);
             break;
         default:
@@ -268,7 +153,6 @@ void tcpRecv(handle *table, int recvNdx, int numConnected) {
     }
 }
 
-//Figure out the arguments needed for these
 void handleMReq(handle *table, char *recvBuf, int numConnected, int sendFd) {
     //To each target send:
     //The header
@@ -284,11 +168,9 @@ void handleMReq(handle *table, char *recvBuf, int numConnected, int sendFd) {
     char found;
     int msgLen, ndx, ndx2;
     
-    //Put into the targets, numDest and msg all the approiate things 
     mParse(targets, &numDest, msg, sender, &senderLen, recvBuf, &msgLen);
     for (ndx = 0; ndx < numDest; ndx++) {
         found = 0;
-        //This function just sends to 1 target
         for (ndx2 = 0; ndx2 < numConnected; ndx2++) {
             if (strcmp(targets[ndx].handle, table[ndx2].handle) == 0) {
                 mReply(table, targets[ndx], msg, sender, senderLen, numConnected, msgLen);
@@ -320,13 +202,6 @@ void mError(char *sender, char senderLen, target *invalid, int sendFd) {
 
 void mParse(target *targets, char *numDest, 
  char *msg, char *sender, char *senderLen, char *recvBuf, int *msgLen) {
-    //Recv: header
-    //sender len
-    //sender
-    //numdest
-    //len then dest for each numdest
-    //msg
-    //char packet[MAXBUF];
     short recvLen;
     int totalOffset = 3, ndx;
     
@@ -347,10 +222,7 @@ void mParse(target *targets, char *numDest,
     *msgLen = recvLen - totalOffset;
 
 }
-//Header
-//Sender Len
-//Sender
-//Message
+
 void mReply(handle *table, target trg, char *msg, char *sender, char senderLen, 
  int tblSize, int msgLen) {
     int ndx, totalOffset = 3, sendBytes;
@@ -423,17 +295,10 @@ void handleEReq(int socket, handle *table, int ndx) {
     }
 }
 
-/*
-int tcpAccept(int serverSock, int debug) {
-    return 0;     
-}
-*/
-
 void recvFromClient(int clientSocket) {
 	char buf[MAXBUF];
 	int messageLen = 0;
 	
-	//now get the data from the client_socket
 	if ((messageLen = recv(clientSocket, buf, MAXBUF, 0)) < 0)
 	{
 		perror("recv call");
@@ -444,7 +309,6 @@ void recvFromClient(int clientSocket) {
 }
 
 int checkArgs(int argc, char *argv[]) {
-	// Checks args and returns port number
 	int portNumber = 0;
 
 	if (argc > 2)
