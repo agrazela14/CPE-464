@@ -34,7 +34,7 @@ void mReply(handle *table, target trg, char *msg, char *sender, char senderLen,
 
 void handleLReq(handle *table, int ndx);
 
-void handleEReq(handle *table, char *buf, char *senderHandle);
+void handleEReq(int socket, handle *table, int ndx);
 
 void recvFromClient(int clientSocket);
 

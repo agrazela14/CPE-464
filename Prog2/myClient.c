@@ -249,7 +249,7 @@ void mFailure(char *recvBuf) {
 }
 
 int eRecv() {
-    return 0;
+    return 1;
 }
 
 void lRecv() {
@@ -284,7 +284,7 @@ void sendToServer(int socketNum, char *handle, client *block, int *numClients, i
             lCommand();
             break;
         case 'E':
-            eCommand();
+            eCommand(socketNum);
             break;
         default:
             break;
@@ -525,8 +525,16 @@ void lCommand() {
 
 }
 
-void eCommand() {
+void eCommand(int socket) {
+    char packet[3];
+    int sendBytes;
 
+    createHeader(packet, 3, 8);
+    sendBytes = send(socket, packet, 3, 0); 
+
+    if (sendBytes != 3) { 
+        fprintf(stderr, "Error in Exit sending\n");
+    }
 }
 
 void checkArgs(int argc, char * argv[], char *handle, char *serverName, char *port) {

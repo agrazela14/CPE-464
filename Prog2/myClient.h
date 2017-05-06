@@ -41,7 +41,7 @@ void uCommand(char *buf, client *block, int *numClients, int *maxClients);
 
 void lCommand();
 
-void eCommand();
+void eCommand(int socket);
 
 void checkArgs(int argc, char * argv[], char *handle, char *serverName, char *port);
 

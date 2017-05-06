@@ -45,7 +45,7 @@ typedef struct {
 
 int main(int argc, char *argv[]) {
 	int serverSocket = 0;   //socket descriptor for the server socket
-	int clientSocket = 0;   //socket descriptor for the client socket
+	//int clientSocket = 0;   //socket descriptor for the client socket
 	short portNumber;
     
     //table of handles starts at 10, can be expanded by realloc
@@ -63,7 +63,7 @@ int main(int argc, char *argv[]) {
     readLoop(serverSocket);
 	
 	/* close the sockets */
-	close(clientSocket);
+	//close(clientSocket);
 	close(serverSocket);
     printf("Exited from main\n");
 	return 0;
@@ -294,6 +294,7 @@ void tcpRecv(handle *table, int recvNdx, int numConnected) {
             break;
         case 8: //Exit
             //Do after Messaging to 3 clients is done 
+            handleEReq(table[recvNdx].fd, table, recvNdx);
             break;
         case 10: //List
             //Do after Messaging to 3 clients is done 
@@ -521,8 +522,20 @@ void handleLReq(handle *table, int ndx) {
     //to the client at the ndx index in table
 }
 
-void handleEReq(handle *table, char *buf, char *senderHandle) {
+void handleEReq(int socket, handle *table, int ndx) {
+    char packet[3];
+    int sendBytes;
+    
+    createHeader(packet, 3, 9);
+    sendBytes = send(socket, packet, 3, 0);
 
+    table[ndx].open = 0;
+    close(table[ndx].fd); 
+
+
+    if (sendBytes != 3) {
+        fprintf(stderr, "Error in Exit sending, sent %d Bytes\n", sendBytes);
+    }
 }
 
 /*
