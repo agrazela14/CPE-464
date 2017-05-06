@@ -22,9 +22,9 @@ int recvFromServer(int sockFd, client *block, int *numClients);
 void mRecv(char *recvBuf, short packetLen, client *block, int *numClients);
 
 void mFailure(char *recvBuf);
-
+ 
 int eRecv();
-
+ 
 void lRecv();
 
 void sendToServer(int socketNum, char *handle, client *block, int *numClients, int *maxClients);

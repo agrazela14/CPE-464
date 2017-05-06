@@ -31,8 +31,7 @@
 #define str(a) #a
 #define HANDLE_LEN 256
 
-int main(int argc, char * argv[])
-{
+int main(int argc, char * argv[]) {
 	int socketNum = 0;         //socket descriptor
     char handle[HANDLE_LEN];
     char serverName[HANDLE_LEN];
@@ -182,7 +181,7 @@ int recvFromServer(int sockFd, client *block, int *numClients) {
             mRecv(recvBuf + 1, recvLen, block, numClients); 
             break;
         case 7: //Message Failure
-            mFailure(recvBuf);
+            mFailure(recvBuf + 1);
             break;
         case 9: //Exit
             toExit = eRecv();
@@ -195,6 +194,8 @@ int recvFromServer(int sockFd, client *block, int *numClients) {
     }
     return toExit;
 }
+
+//When a buffer makes it's way to here, it's already had its header read off
 
 void mRecv(char *recvBuf, short packetLen, client *block, int *numClients) {
     char printBuf[MAXBUF];
@@ -230,7 +231,7 @@ void mRecv(char *recvBuf, short packetLen, client *block, int *numClients) {
 
     printBuf[packetLen - 4 - senderLen] = '\0';
     printf("Printing out the message: 1 FUCKING BYTE AT A TIME\n");
-    printf("Strlen Printbuf = %d\n", strlen(printBuf));
+    printf("Strlen Printbuf = %d\n", (int)strlen(printBuf));
     for (ndx = 0; ndx < strlen(printBuf); ndx++) {
         printf("%c", printBuf[ndx]);
     }
@@ -238,7 +239,13 @@ void mRecv(char *recvBuf, short packetLen, client *block, int *numClients) {
 }
 
 void mFailure(char *recvBuf) {
-
+    char handleLen = *recvBuf++;
+    char handleBuf[HANDLE_LEN];
+    
+    memcpy(handleBuf, recvBuf, handleLen);
+    handleBuf[(int)handleLen] = '\0';
+    
+    printf("Handle %s Does not Exist\n", handleBuf); 
 }
 
 int eRecv() {
@@ -249,8 +256,7 @@ void lRecv() {
 
 }
 
-void sendToServer(int socketNum, char *handle, client *block, int *numClients, int *maxClients)
-{
+void sendToServer(int socketNum, char *handle, client *block, int *numClients, int *maxClients) {
 	char sendBuf[MAXBUF];   //data buffer
 	int sendLen = 0;        //amount of data to send
     //int toExit = 0;
@@ -523,8 +529,7 @@ void eCommand() {
 
 }
 
-void checkArgs(int argc, char * argv[], char *handle, char *serverName, char *port)
-{
+void checkArgs(int argc, char * argv[], char *handle, char *serverName, char *port) {
 	/* check command line arguments  */
 	if (argc != 4)
 	{

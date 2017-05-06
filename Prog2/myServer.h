@@ -16,15 +16,15 @@ typedef struct {
 
 int main(int argc, char *argv[]);
 
-//int tcpServerSetup(int portNum);
-
 void readLoop(int servFd);
 
 void createHeader(char *packet, short len, char flag);
 
 void tcpRecv(handle *table, int recvNdx, int numConnected);
 
-void handleMReq(handle *table, char *recvBuf, int numConnected);
+void handleMReq(handle *table, char *recvBuf, int numConnected, int sendFd);
+
+void mError(char *sender, char senderLen, target *invalid, int sendFd);
 
 void mParse(target *targets, char *numDest, 
  char *msg, char *sender, char *senderLen, char *recvBuf, int *msgLen);
@@ -35,8 +35,6 @@ void mReply(handle *table, target trg, char *msg, char *sender, char senderLen,
 void handleLReq(handle *table, int ndx);
 
 void handleEReq(handle *table, char *buf, char *senderHandle);
-
-//int tcpAccept(int serverSock, int debug);
 
 void recvFromClient(int clientSocket);
 

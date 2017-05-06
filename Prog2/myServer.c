@@ -43,8 +43,7 @@ typedef struct {
 }target;
 */
 
-int main(int argc, char *argv[])
-{
+int main(int argc, char *argv[]) {
 	int serverSocket = 0;   //socket descriptor for the server socket
 	int clientSocket = 0;   //socket descriptor for the client socket
 	short portNumber;
@@ -258,7 +257,7 @@ void tcpRecv(handle *table, int recvNdx, int numConnected) {
             }
             break;
         case 5: //Message
-            handleMReq(table, recvBuf, numConnected);
+            handleMReq(table, recvBuf, numConnected, table[recvNdx].fd);
             /*
             totalOffset = 3;
             senderLen = *(recvBuf + totalOffset++);
@@ -305,7 +304,7 @@ void tcpRecv(handle *table, int recvNdx, int numConnected) {
 }
 
 //Figure out the arguments needed for these
-void handleMReq(handle *table, char *recvBuf, int numConnected) {
+void handleMReq(handle *table, char *recvBuf, int numConnected, int sendFd) {
     //To each target send:
     //The header
     //The size of the sender
@@ -317,15 +316,42 @@ void handleMReq(handle *table, char *recvBuf, int numConnected) {
     char numDest;
     char sender[HANDLE_LEN];
     char senderLen;
-    int msgLen, ndx;
+    char found;
+    int msgLen, ndx, ndx2;
     
     //Put into the targets, numDest and msg all the approiate things 
     mParse(targets, &numDest, msg, sender, &senderLen, recvBuf, &msgLen);
     for (ndx = 0; ndx < numDest; ndx++) {
+        found = 0;
         //This function just sends to 1 target
-        mReply(table, targets[ndx], msg, sender, senderLen, numConnected, msgLen);
+        for (ndx2 = 0; ndx2 < numConnected; ndx2++) {
+            if (strcmp(targets[ndx].handle, table[ndx2].handle) == 0) {
+                mReply(table, targets[ndx], msg, sender, senderLen, numConnected, msgLen);
+                found = 1;
+                break;
+            }
+        }
+        if (!found) {
+            mError(sender, senderLen, &targets[ndx], sendFd);
+        }
     }
 }    
+
+void mError(char *sender, char senderLen, target *invalid, int sendFd) {
+    char packet[MAXBUF];
+    short totalLen = 4 + senderLen + invalid->len;    
+    int sendBytes;
+
+    createHeader(packet, totalLen, 7);
+    packet[3] = invalid->len;
+    memcpy(packet + 4, invalid->handle, invalid->len);
+    sendBytes = send(sendFd, packet, totalLen, 0);
+
+    if (sendBytes != totalLen) {
+        fprintf(stderr, "Error sending flag 7 packet\n");
+    }
+}
+
 
 void mParse(target *targets, char *numDest, 
  char *msg, char *sender, char *senderLen, char *recvBuf, int *msgLen) {
@@ -361,7 +387,7 @@ void mParse(target *targets, char *numDest,
 //Sender
 //Message
 void mReply(handle *table, target trg, char *msg, char *sender, char senderLen, 
- int tblSize, int msgLen){
+ int tblSize, int msgLen) {
     int ndx, totalOffset = 3, sendBytes;
     char packet[MAXBUF];
 
@@ -505,8 +531,7 @@ int tcpAccept(int serverSock, int debug) {
 }
 */
 
-void recvFromClient(int clientSocket)
-{
+void recvFromClient(int clientSocket) {
 	char buf[MAXBUF];
 	int messageLen = 0;
 	
@@ -520,8 +545,7 @@ void recvFromClient(int clientSocket)
 	printf("Message received, length: %d Data: %s\n", messageLen, buf);
 }
 
-int checkArgs(int argc, char *argv[])
-{
+int checkArgs(int argc, char *argv[]) {
 	// Checks args and returns port number
 	int portNumber = 0;
 
