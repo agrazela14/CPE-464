@@ -6,6 +6,7 @@
 #include <unistd.h>
 #include <string.h>
 #include <sys/types.h>
+#include <sys/time.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
@@ -14,6 +15,7 @@
 #include "cpe464.h"
 
 #define MAXBUF 80
+#define HEADER_LEN 10
 
 typedef enum State STATE;
 
@@ -52,12 +54,20 @@ void processClient(int socketNum)
     //int dataLen = 0; 
     char buffer[MAXBUF + 1];      
     struct sockaddr_in6 client;     
-    socklen_t clientAddrLen = sizeof(client); 
+    //socklen_t clientAddrLen = sizeof(client); 
+    fd_set servFd;
+    struct timeval timeout;
+    timeout.tv_sec = 0;
+    timeout.tv_usec = 0;
     
     buffer[0] = '\0';
     while (buffer[0] != '.')
     {
-        recvfrom(socketNum, buffer, MAXBUF, 0, (struct sockaddr *) &client, &clientAddrLen);
+        FD_ZERO(&servFd);
+        FD_SET(socketNum, &servFd);
+
+        //recvfrom(socketNum, buffer, 0/*MAXBUF*/, 0, (struct sockaddr *) &client, &clientAddrLen);
+        select(1, &servFd, NULL, NULL, &timeout);
     
         printClientIP(&client);
         stateLoop(client, socketNum);
@@ -114,7 +124,7 @@ void stateLoop(struct sockaddr_in6 client, int sockNum) {
 STATE initConnection(struct sockaddr_in6 *client, int sockNum) {
     char recvBuffer[MAXBUF + 1];
     char sendBuffer[MAXBUF + 1];
-    socklen_t clientSize = sizeof(client);
+    socklen_t clientSize = sizeof(*client);
 
     ssize_t recvBytes = recvfrom(sockNum, recvBuffer, 10, 0, 
      (struct sockaddr *)client, &clientSize); 
@@ -172,11 +182,11 @@ int createPacket(char *buffer, uint32_t seqNum, uint32_t checksum, uint16_t flag
     seqNum = htonl(seqNum);
     memcpy(buffer, &seqNum, sizeof(uint32_t)); 
     ndx += sizeof(uint32_t);
-    memcpy(buffer, &checksum, sizeof(uint32_t)); 
+    memcpy(buffer + ndx, &checksum, sizeof(uint32_t)); 
     ndx += sizeof(uint32_t);
-    memcpy(buffer, &flag, sizeof(uint16_t)); 
+    memcpy(buffer + ndx, &flag, sizeof(uint16_t)); 
     ndx += sizeof(uint16_t);
-    memcpy(buffer, data, dataSize);
+    memcpy(buffer + ndx, data, dataSize);
     return ndx + dataSize;
 }
 

@@ -25,7 +25,7 @@ OS = $(shell uname -s)
 ifeq ("$(OS)", "Linux")
 	LIBS1 = -lstdc++
 	ifeq ("$(ARCH)", "x86_64")
-		FILE = 64
+		FILE = #64
 		LIBNAME = $(shell ls *cpe464_$(FILE)*.a 2> /dev/null | tail -n 1)
 	endif
 endif

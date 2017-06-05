@@ -19,6 +19,7 @@
 #include "cpe464.h"
 
 #define MAXBUF 80
+#define HEADER_LEN 10
 #define xstr(a) str(a)
 #define str(a) #a
 
@@ -116,20 +117,22 @@ void talkToServer(arguments *argu, int sockNum, struct sockaddr_in6 *server)
 //If response comes go on to filename state
 //If timeout and resend 10 times, go to Shutdown state
 STATE initConnection(arguments *argu, int sockNum, struct sockaddr_in6 *server) {
+    //Apparently Checksum works by just putting a 0 in the field and running the function
+    //in_cksum() on the packet. 
     unsigned int addrLen = sizeof(*server);
     char buffer[16];
     char recvBuffer[16];
-    int packetLen = createPacket(buffer, 0, 1, 0, 0, ""); 
-    printf("Checksum = %d\n", in_cksum((unsigned short *)buffer, 10));
+    int packetLen = createPacket(buffer, 0, 0, 1, 0, ""); 
+    printf("Checksum = %d, packetLen: %d\n", in_cksum((unsigned short *)buffer, 10), packetLen);
     //Now get a checksum value
-    packetLen = createPacket(buffer, 0, 1, in_cksum((unsigned short *)buffer, 10), 0, ""); 
+    packetLen = createPacket(buffer, 0, in_cksum((unsigned short *)buffer, 10), 1, 0, ""); 
     ssize_t bytesSent = sendtoErr(sockNum, buffer, packetLen, 0, 
      (struct sockaddr *)server, addrLen); 
 
     ssize_t bytesRecv = recvfrom(sockNum, recvBuffer, 10, 0, 
      (struct sockaddr *)server, &addrLen); 
     printf("Recv Flag: %hd, bytes Recv: %d bytes Sent: %d\n", 
-     (short)recvBuffer[4], (int)bytesRecv, (int)bytesSent);
+     (short)recvBuffer[8], (int)bytesRecv, (int)bytesSent);
     return DONE;
 } 
 
@@ -203,11 +206,11 @@ int createPacket(char *buffer, uint32_t seqNum, uint32_t checksum, uint16_t flag
     seqNum = htonl(seqNum);
     memcpy(buffer, &seqNum, sizeof(uint32_t)); 
     ndx += sizeof(uint32_t);
-    memcpy(buffer, &checksum, sizeof(uint32_t)); 
+    memcpy(buffer + ndx, &checksum, sizeof(uint32_t)); 
     ndx += sizeof(uint32_t);
-    memcpy(buffer, &flag, sizeof(uint16_t)); 
+    memcpy(buffer + ndx, &flag, sizeof(uint16_t)); 
     ndx += sizeof(uint16_t);
-    memcpy(buffer, data, dataSize);
+    memcpy(buffer + ndx, data, dataSize);
     return ndx + dataSize;
 }
 
