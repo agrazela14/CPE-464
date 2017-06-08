@@ -10,7 +10,7 @@
 #include <sys/time.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
-include <arpa/inet.h>
+#include <arpa/inet.h>
 
 #include "networks.h"
 #include "cpe464.h"
@@ -26,10 +26,14 @@ typedef struct {
     int length;
 } packet;
 
+typedef struct {
+    uint32_t winHi;
+    uint32_t winLow;
+} windowSize;
+
 enum State {
     START, FILENAME, SEND_DATA, WAIT_FOR_ACK, WAIT_FOR_EOF_ACK, SHUTDOWN, DONE
 };
-
 
 void processClient(int socketNum);
 
@@ -42,15 +46,15 @@ void stateLoop(struct sockaddr_in6 client, int sockNum);
 STATE initConnection(struct sockaddr_in6 *client, int sockNum);
 
 STATE readFilename(struct sockaddr_in6 *client, int sockNum, 
- uint32_t *window, uint32_t *bufLen, packet *fileBuf, FILE **readFile);
+ windowSize *window, uint32_t *bufLen, packet **fileBuf, FILE **readFile);
 
 STATE sendData(struct sockaddr_in6 *client, int sockNum, packet *fileBuf, 
- uint32_t *window, uint32_t bufLen, uint32_t *seqNum, FILE *readFile);
+ windowSize *window, uint32_t bufLen, uint32_t *seqNum, FILE *readFile);
 
 STATE waitForAck(struct sockaddr_in6 *client, int sockNum, uint32_t *seqNum, int attempts, 
- uint32_t *window, uint32_t bufLen, FILE *readFile, packet *fileBuf);
+ windowSize *window, uint32_t bufLen, FILE *readFile, packet *fileBuf);
 
-void fillFileBuffer(uint32_t newLow, uint32_t *window, uint32_t winsize, uint32_t bufSize, 
+void fillFileBuffer(uint32_t newLow, windowSize *window, uint32_t winsize, uint32_t bufSize, 
  FILE *readFile, packet *fileBuf);
 
 int createPacket(char *buffer, uint32_t seqNum, uint32_t checksum, uint16_t flag, 
@@ -65,6 +69,8 @@ int main ( int argc, char *argv[]  )
     double error;
 
     portNumber = checkArgs(argc, argv, &error);
+
+    sendtoErr_init(error, DROP_ON, FLIP_ON, DEBUG_ON, RSEED_ON);
         
     socketNum = udpServerSetup(portNumber);
 
@@ -114,8 +120,7 @@ void stateLoop(struct sockaddr_in6 client, int sockNum) {
     uint32_t seqNum = 0;
     FILE *readFile = NULL; 
     uint32_t bufLen;
-    uint32_t window[2];
-    window[0] = 0;
+    windowSize window;
     packet *fileBuf = malloc(sizeof(packet));
 
     while (state != DONE) {
@@ -126,15 +131,15 @@ void stateLoop(struct sockaddr_in6 client, int sockNum) {
                 break;
                 
             case (FILENAME):
-                state = readFilename(&client, sockNum, &bufLen, window, fileBuf, &readFile);
+                state = readFilename(&client, sockNum, &window, &bufLen, &fileBuf, &readFile);
                 break;
                 
             case (SEND_DATA):
-                state = sendData(&client, sockNum, fileBuf, window, bufLen, &seqNum, readFile);
+                state = sendData(&client, sockNum, fileBuf, &window, bufLen, &seqNum, readFile);
                 break;
 
             case (WAIT_FOR_ACK):
-                state = waitForAck(&client, sockNum, &seqNum, 0, window, 
+                state = waitForAck(&client, sockNum, &seqNum, 0, &window, 
                  bufLen, readFile, fileBuf);
                 break;
             /*
@@ -153,6 +158,7 @@ void stateLoop(struct sockaddr_in6 client, int sockNum) {
 
             default:
                 printf("Reached default in state loop, should not have happened\n");
+                state = SHUTDOWN;
                 break;
 
         }
@@ -166,10 +172,14 @@ STATE initConnection(struct sockaddr_in6 *client, int sockNum) {
 
     ssize_t recvBytes = recvfrom(sockNum, recvBuffer, 10, 0, 
      (struct sockaddr *)client, &clientSize); 
-    printf("Recv'd Bytes: %d\n", (int)recvBytes);
+    printf("Start Recv'd Bytes: %d\n", (int)recvBytes);
     printf("checksum field on recv'd data %d\n", (uint32_t)recvBuffer[4]);
     printf("checksum calc on recv'd data: %d\n", 
      in_cksum((unsigned short *)recvBuffer, recvBytes));
+
+    if (recvBytes < 0) {
+        return SHUTDOWN;
+    }
     
     if (in_cksum((unsigned short *)recvBuffer, recvBytes) != 0) {
         return START;
@@ -187,7 +197,7 @@ STATE initConnection(struct sockaddr_in6 *client, int sockNum) {
 } 
 
 STATE readFilename(struct sockaddr_in6 *client, int sockNum, 
- uint32_t *window, uint32_t *bufLen, packet *fileBuf, FILE **readFile) {
+ windowSize *window, uint32_t *bufLen, packet **fileBuf, FILE **readFile) {
     char recvBuffer[MAXBUF + 1];
     char sendBuffer[MAXBUF + 1];
     uint16_t flag = 8;
@@ -195,7 +205,7 @@ STATE readFilename(struct sockaddr_in6 *client, int sockNum,
 
     ssize_t recvBytes = recvfrom(sockNum, recvBuffer, MAXBUF, 0, 
      (struct sockaddr *)client, &clientSize); 
-    printf("Recv'd Bytes: %d\n", (int)recvBytes);
+    printf("Filename Recv'd Bytes: %d\n", (int)recvBytes);
     printf("checksum field on recv'd data %d\n", (uint32_t)recvBuffer[4]);
     printf("checksum calc on recv'd data: %d\n", 
      in_cksum((unsigned short *)recvBuffer, recvBytes));
@@ -211,14 +221,15 @@ STATE readFilename(struct sockaddr_in6 *client, int sockNum,
     printf("Filename: %s\n", (char *)&recvBuffer[18]);
 
     *bufLen = (uint32_t)recvBuffer[HEADER_LEN + sizeof(uint32_t)];
-    memcpy(&(window[1]), &recvBuffer[HEADER_LEN], sizeof(uint32_t));
+    window->winHi = recvBuffer[HEADER_LEN];
+    window->winLow = 0;
     *readFile = fopen(&recvBuffer[HEADER_LEN + 2 * sizeof(uint32_t)], "r");
 
-    printf("winSize: %d bufSize: %d\n", window[1], *bufLen); 
+    printf("winSize: %d bufSize: %d\n", window->winHi, *bufLen); 
 
-    fileBuf = realloc(fileBuf, window[1] * sizeof(packet));
-    fileBuf[0].sequence = 0; 
-    fillFileBuffer(0, window, window[1], *bufLen, *readFile, fileBuf); 
+    *fileBuf = realloc(*fileBuf, window->winHi * sizeof(packet));
+    (*fileBuf)[0].sequence = 0; 
+    fillFileBuffer(0, window, window->winHi, *bufLen, *readFile, (*fileBuf)); 
 
     if (readFile == NULL) {
         flag = 9;
@@ -235,7 +246,7 @@ STATE readFilename(struct sockaddr_in6 *client, int sockNum,
 } 
 
 STATE sendData(struct sockaddr_in6 *client, int sockNum, packet *fileBuf, 
- uint32_t *window, uint32_t bufLen, uint32_t *seqNum, FILE *readFile) {
+ windowSize *window, uint32_t bufLen, uint32_t *seqNum, FILE *readFile) {
     //char recvBuffer[MAXBUF + 1];
     char sendBuffer[MAXBUF + 1];
     char dataBuf[MAXBUF + 1];
@@ -254,8 +265,11 @@ STATE sendData(struct sockaddr_in6 *client, int sockNum, packet *fileBuf,
     timeout.tv_usec = 0;
     FD_ZERO(&fds);
     FD_SET(sockNum, &fds);
+    
+    printf("Send Data, seqNum = %d\n", *seqNum);
+    //printf("fileBuf[0].sequence = %d window[0] = %d, window[1] = %d\n", fileBuf[0].sequence, window[0], window[1]);
 
-    for (i = 0; i < (window[1] - window[0]); i++) {
+    for (i = 0; i < (window->winHi - window->winLow); i++) {
         if (fileBuf[i].sequence == *seqNum) {
             found = 1;
             break;
@@ -275,15 +289,16 @@ STATE sendData(struct sockaddr_in6 *client, int sockNum, packet *fileBuf,
 
     memcpy(dataBuf + dataAdv, fileBuf[i].data, fileBuf[i].length); 
 
-    packetSize = createPacket(sendBuffer, *seqNum, 0, flag, 
+    packetSize = createPacket(sendBuffer, fileBuf[i].sequence, 0, flag, 
      fileBuf[i].length + dataAdv, dataBuf); 
-    packetSize = createPacket(sendBuffer, *seqNum, in_cksum((unsigned short *)sendBuffer,
-     packetSize), flag, fileBuf[i].length + dataAdv, dataBuf); 
+    packetSize = createPacket(sendBuffer, fileBuf[i].sequence, 
+     in_cksum((unsigned short *)sendBuffer, packetSize), flag, 
+     fileBuf[i].length + dataAdv, dataBuf); 
     
     bytesSent = sendtoErr(sockNum, sendBuffer, packetSize, 0, 
      (struct sockaddr *)client, clientSize);
 
-    printf("Bytes Sent: %d\n", (int)bytesSent);
+    printf("Send Data Bytes Sent: %d\n", (int)bytesSent);
         
     (*seqNum) += 1;
 
@@ -297,7 +312,7 @@ STATE sendData(struct sockaddr_in6 *client, int sockNum, packet *fileBuf,
         return WAIT_FOR_ACK;
     }
         
-    if (*seqNum <= window[1]) {
+    if (*seqNum <= window->winHi) {
         //keep sending 
         return SEND_DATA;
     }
@@ -310,11 +325,11 @@ STATE sendData(struct sockaddr_in6 *client, int sockNum, packet *fileBuf,
 }
 
 
-void fillFileBuffer(uint32_t newLow, uint32_t *window, uint32_t winsize, uint32_t bufSize, 
+void fillFileBuffer(uint32_t newLow, windowSize *window, uint32_t winsize, uint32_t bufSize, 
  FILE *readFile, packet *packets) {
     int i;
     int shiftBack = 0;
-    int windowShift = newLow - window[0];
+    int windowShift = newLow - window->winLow;
 
     for (i = 0; i < winsize; i++) {
         if (packets[i].sequence == newLow) {
@@ -328,15 +343,15 @@ void fillFileBuffer(uint32_t newLow, uint32_t *window, uint32_t winsize, uint32_
     } 
 
     for (i = shiftBack; i < winsize - shiftBack; i++) {
-        packets[i].length = fread(packets[i].data, bufSize, 1, readFile); 
+        packets[i].length = fread(packets[i].data, 1, bufSize, readFile); 
         packets[i].sequence = newLow + i;
     }
-    window[0] += windowShift;
-    window[1] += windowShift;
+    window->winLow += windowShift;
+    window->winHi += windowShift;
 }
 
 STATE waitForAck(struct sockaddr_in6 *client, int sockNum, uint32_t *seqNum, int attempts, 
- uint32_t *window, uint32_t bufLen, FILE *readFile, packet *fileBuf) {
+ windowSize *window, uint32_t bufLen, FILE *readFile, packet *fileBuf) {
     //Use the incoming RR's seqNum as fillFileBuffer's newLow
     //Use a 1 sec timeout select for waiting, if it times out 10 times send a single data pack
     //With seqNum/data of filBuf[0].
@@ -353,6 +368,8 @@ STATE waitForAck(struct sockaddr_in6 *client, int sockNum, uint32_t *seqNum, int
     timeout.tv_usec = 0;
     FD_ZERO(&fds);
     FD_SET(sockNum, &fds);
+
+    printf("Wait for acks, window: [%d, %d]\n", window->winLow, window->winHi);
     
     int readFds = select(sockNum + 1, &fds, NULL, NULL, &timeout); 
     
@@ -384,7 +401,7 @@ STATE waitForAck(struct sockaddr_in6 *client, int sockNum, uint32_t *seqNum, int
     }
 
     newLow = htonl((uint32_t)recvBuffer[0]);
-    fillFileBuffer(newLow, window, (window[1] - window[0]), bufLen, readFile, fileBuf);
+    fillFileBuffer(newLow, window, (window->winHi - window->winLow), bufLen, readFile, fileBuf);
     return SEND_DATA;
 }
 

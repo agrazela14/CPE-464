@@ -257,7 +257,7 @@ STATE readData(arguments *argu, int sockNum, struct sockaddr_in6 *server,
     int eofPack = 0;
     char dataBuf[sizeof(uint32_t)];
      
-    /*ssize_t bytesRecv = */recvfrom(sockNum, recvBuffer, MAXBUF, 0, 
+    /*ssize_t bytesRecv = */recvfrom(sockNum, recvBuffer, HEADER_LEN + argu->bufSize, 0, 
      (struct sockaddr *)server, &addrLen); 
     ssize_t bytesSent;
 
@@ -265,6 +265,8 @@ STATE readData(arguments *argu, int sockNum, struct sockaddr_in6 *server,
     uint16_t flag = (uint16_t)recvBuffer[8];
     int packetLen = 0;
     uint32_t writeLen = argu->bufSize;
+
+    printf("Looking for packet with seqNum: %d\n", *seqNum);
     
     //Flag is wrong for a data packet 
     if (flag != 3) {
@@ -277,6 +279,7 @@ STATE readData(arguments *argu, int sockNum, struct sockaddr_in6 *server,
         writeLen = (uint32_t)recvBuffer[HEADER_LEN]; 
         eofPack = 1;
     }
+
     if (recvSeq == *seqNum) {
         fwrite(recvBuffer + HEADER_LEN + sizeof(uint32_t) * eofPack, writeLen, 1, outFile);
         (*seqNum) += 1;
@@ -287,31 +290,33 @@ STATE readData(arguments *argu, int sockNum, struct sockaddr_in6 *server,
         bytesSent = sendtoErr(sockNum, buffer, packetLen, 0, 
          (struct sockaddr *)server, addrLen); 
 
-        printf("Sent Bytes %d\n", (int)bytesSent);
+        printf("Correct SeqNum, Sent Bytes %d\n", (int)bytesSent);
         return WAIT_FOR_DATA;
     }
 
     else if (recvSeq > *seqNum) {
     //Out of sequence packet, go into srej mode
+        printf("recvSeq: %d, seqNum: %d\n", recvSeq, *seqNum);
         packetLen = createPacket(buffer, *seqNum, 0, 6, dataLen, dataBuf); 
         packetLen = createPacket(buffer, *seqNum, in_cksum((unsigned short *)buffer, packetLen), 
          6, dataLen, dataBuf); 
         bytesSent = sendtoErr(sockNum, buffer, packetLen, 0, 
          (struct sockaddr *)server, addrLen); 
 
-        printf("Sent Bytes %d\n", (int)bytesSent);
+        printf("SeqNum High, Sent Bytes %d\n", (int)bytesSent);
         return WAIT_FOR_SREJ_RESP;
     }
 
     else if (recvSeq < *seqNum){
         //Send an RRPacket for the current seqNum - 1 to kickstart the server
+        printf("recvSeq: %d, seqNum: %d\n", recvSeq, *seqNum);
         packetLen = createPacket(buffer, *seqNum - 1, 0, 5, dataLen, dataBuf); 
         packetLen = createPacket(buffer, *seqNum - 1, in_cksum((unsigned short *)buffer, 
          packetLen), 5, dataLen, dataBuf); 
         bytesSent = sendtoErr(sockNum, buffer, packetLen, 0, 
          (struct sockaddr *)server, addrLen); 
 
-        printf("Sent Bytes %d\n", (int)bytesSent);
+        printf("SeqNum Low, Sent Bytes %d\n", (int)bytesSent);
         return WAIT_FOR_DATA;
     }
     return SHUTDOWN;
