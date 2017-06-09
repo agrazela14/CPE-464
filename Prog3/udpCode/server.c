@@ -55,7 +55,7 @@ STATE waitForAck(struct sockaddr_in6 *client, int sockNum, uint32_t *seqNum, int
  windowSize *window, uint32_t bufLen, FILE *readFile, packet *fileBuf);
 
 void fillFileBuffer(uint32_t newLow, windowSize *window, uint32_t winsize, uint32_t bufSize, 
- FILE *readFile, packet *fileBuf);
+ FILE *readFile, packet *fileBuf, int first);
 
 int createPacket(char *buffer, uint32_t seqNum, uint32_t checksum, uint16_t flag, 
  int dataSize, char *data);
@@ -221,7 +221,7 @@ STATE readFilename(struct sockaddr_in6 *client, int sockNum,
     printf("Filename: %s\n", (char *)&recvBuffer[18]);
 
     *bufLen = (uint32_t)recvBuffer[HEADER_LEN + sizeof(uint32_t)];
-    window->winHi = recvBuffer[HEADER_LEN];
+    window->winHi = recvBuffer[HEADER_LEN] - 1;
     window->winLow = 0;
     *readFile = fopen(&recvBuffer[HEADER_LEN + 2 * sizeof(uint32_t)], "r");
 
@@ -229,17 +229,27 @@ STATE readFilename(struct sockaddr_in6 *client, int sockNum,
 
     *fileBuf = realloc(*fileBuf, window->winHi * sizeof(packet));
     (*fileBuf)[0].sequence = 0; 
-    fillFileBuffer(0, window, window->winHi, *bufLen, *readFile, (*fileBuf)); 
 
     if (readFile == NULL) {
+        printf("opeing the file failed\n");
         flag = 9;
     }
+
+    else {
+        fillFileBuffer(0, window, window->winHi, *bufLen, *readFile, (*fileBuf), 1); 
+    }
+
+
     int packetSize = createPacket(sendBuffer, 0, 0, flag, 0, ""); 
     packetSize = createPacket(sendBuffer, 0, in_cksum((unsigned short *)sendBuffer, HEADER_LEN), 
      flag, 0, ""); 
     
     ssize_t bytesSent = sendtoErr(sockNum, sendBuffer, packetSize, 0, 
      (struct sockaddr *)client, clientSize);
+
+    if (flag == 9) {
+        return SHUTDOWN;
+    }
 
     printf("Bytes Sent: %d, Moving on to Send Data\n", (int)bytesSent);
     return SEND_DATA;
@@ -280,8 +290,10 @@ STATE sendData(struct sockaddr_in6 *client, int sockNum, packet *fileBuf,
     if (found == 0) {
         return WAIT_FOR_ACK;
     }
-
+    
+    //This is for putting the length of the data of the final packet in
     if (fileBuf[i].length != bufLen) {
+        printf("Final packet, bufLen vs packetLen: %d v %d\n", bufLen, fileBuf[i].length);
         flag = 10;
         memcpy(dataBuf, &(fileBuf[i].length), 4);
         dataAdv = 4;
@@ -326,26 +338,40 @@ STATE sendData(struct sockaddr_in6 *client, int sockNum, packet *fileBuf,
 
 
 void fillFileBuffer(uint32_t newLow, windowSize *window, uint32_t winsize, uint32_t bufSize, 
- FILE *readFile, packet *packets) {
+ FILE *readFile, packet *packets, int first) {
     int i;
-    int shiftBack = 0;
+    //int shiftBack = 0;
+    //The windowshift is a left shift, new data comes in on the right
     int windowShift = newLow - window->winLow;
 
+    /*
     for (i = 0; i < winsize; i++) {
         if (packets[i].sequence == newLow) {
-            shiftBack = i;
+            windowShift = i;
             break;
         }
     }
+    */
     
-    for (i = 0; i < shiftBack; i++) {
-        memcpy(&packets[i], &packets[i + shiftBack], sizeof(packet));
-    } 
-
-    for (i = shiftBack; i < winsize - shiftBack; i++) {
-        packets[i].length = fread(packets[i].data, 1, bufSize, readFile); 
-        packets[i].sequence = newLow + i;
+    if (first) {
+        for (i = 0; i < window->winHi - window->winLow; i++) {
+            packets[i].length = fread(packets[i].data, 1, bufSize, readFile); 
+            packets[i].sequence = newLow + i;
+        }
     }
+
+    else {
+        for (i = 0; i < windowShift; i++) {
+            memcpy(&packets[i], &packets[i + windowShift], sizeof(packet));
+        } 
+
+        for (i = winsize - windowShift; i < winsize; i++) {
+            packets[i].length = fread(packets[i].data, 1, bufSize, readFile); 
+            packets[i].sequence = newLow + i;
+        }
+    }
+
+    printf("Window new Low = %d, windowShift = %d\n", newLow, windowShift);
     window->winLow += windowShift;
     window->winHi += windowShift;
 }
@@ -369,11 +395,16 @@ STATE waitForAck(struct sockaddr_in6 *client, int sockNum, uint32_t *seqNum, int
     FD_ZERO(&fds);
     FD_SET(sockNum, &fds);
 
+    if (attempts == 11) {
+        return SHUTDOWN;
+    }
+
     printf("Wait for acks, window: [%d, %d]\n", window->winLow, window->winHi);
+    printf("Lowest Filebuf Seq: %d\n", fileBuf[0].sequence);
     
     int readFds = select(sockNum + 1, &fds, NULL, NULL, &timeout); 
     
-    if (attempts == 10) {
+        /*
         int packetSize = createPacket(sendBuffer, *seqNum, 0, flag, 
          fileBuf[0].length, fileBuf[0].data); 
         packetSize = createPacket(sendBuffer, *seqNum, in_cksum((unsigned short *)sendBuffer,
@@ -383,25 +414,63 @@ STATE waitForAck(struct sockaddr_in6 *client, int sockNum, uint32_t *seqNum, int
          (struct sockaddr *)client, clientSize);
         printf("Bytes Sent: %d\n", (int)bytesSent);
         return WAIT_FOR_ACK;    
-    }    
+        */
 
      
     if (readFds <= 0) {
-        return waitForAck(client, sockNum, seqNum, attempts++, 
+        //Timed out, sending the lowest window packet again
+        int packetSize = createPacket(sendBuffer, *seqNum, 0, flag, 
+         fileBuf[0].length, fileBuf[0].data); 
+        packetSize = createPacket(sendBuffer, *seqNum, in_cksum((unsigned short *)sendBuffer,
+         packetSize), flag, fileBuf[0].length, fileBuf[0].data); 
+    
+        ssize_t bytesSent = sendtoErr(sockNum, sendBuffer, packetSize, 0, 
+         (struct sockaddr *)client, clientSize);
+        printf("RESENT LOWEST FRAME, Bytes Sent: %d\n", (int)bytesSent);
+
+        return waitForAck(client, sockNum, seqNum, ++attempts, 
          window, bufLen, readFile, fileBuf);
     }
 
     while (readFds > 0) {
-        /*ssize_t recvBytes =*/ recvfrom(sockNum, recvBuffer, HEADER_LEN + sizeof(uint32_t), 0, 
+        ssize_t recvBytes = recvfrom(sockNum, recvBuffer, HEADER_LEN + sizeof(uint32_t), 0, 
          (struct sockaddr *)client, &clientSize); 
         readFds = select(sockNum + 1, &fds, NULL, NULL, &timeout); 
+
+        if (in_cksum((unsigned short *)recvBuffer, recvBytes) != 0) {
+            //Bad Checksum in acks 
+            continue;
+        }
+
+        newLow = htonl(*(uint32_t *)recvBuffer) + 1;
+        
+        //SREJ, reset the sequence Number
+        if ((uint16_t)recvBuffer[8] == 6) {
+            *seqNum = htonl(*(uint32_t *)recvBuffer);
+            newLow = *seqNum;
+        }
     }
+
+    if ((uint16_t)recvBuffer[8] == 7) {
+        //Resend the File Ok
+        int packetSize = createPacket(sendBuffer, 0, 0, flag, 0, ""); 
+         packetSize = createPacket(sendBuffer, 0, in_cksum((unsigned short *)sendBuffer, 
+          HEADER_LEN), flag, 0, ""); 
+    
+        ssize_t bytesSent = sendtoErr(sockNum, sendBuffer, packetSize, 0, 
+         (struct sockaddr *)client, clientSize);
+        *seqNum = 0;
+        //return FILENAME;
+    }
+
     if ((uint16_t)recvBuffer[8] == 11) {
         return SHUTDOWN;
     }
-
-    newLow = htonl((uint32_t)recvBuffer[0]);
-    fillFileBuffer(newLow, window, (window->winHi - window->winLow), bufLen, readFile, fileBuf);
+    
+    //This should take care of either an SREJ or an RR tbh
+    //newLow = htonl(*(uint32_t *)recvBuffer);
+    fillFileBuffer(newLow, window, (window->winHi - window->winLow), 
+     bufLen, readFile, fileBuf, 0);
     return SEND_DATA;
 }
 

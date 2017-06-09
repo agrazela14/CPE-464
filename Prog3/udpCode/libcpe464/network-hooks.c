@@ -43,25 +43,51 @@ int bindMod(int sockfd, const struct sockaddr *addr, socklen_t addrlen)
 
     char* env_port;
     env_port = getenv("CPE464_OVERRIDE_PORT");
-
-    if (env_port && !s_hasOverridden)
+	int family = 0;
+	int len = sizeof(family);
+	
+	if (getsockopt(sockfd, SOL_SOCKET, SO_DOMAIN, (void *) &family, (socklen_t *) &len) < 0)
+	{
+		perror("getsockopt: ");
+		exit(-1);
+	}
+    
+	if (env_port && !s_hasOverridden)
     {
         s_hasOverridden = 1;
         port = atol(env_port);
 
         DBG_PRINT(DBG_LEVEL_WARN, "Port Override - %i\n", port);
-
-        ((struct sockaddr_in*)addr)->sin_port = htons(port);
+		
+		if (family == AF_INET6)
+		{
+			((struct sockaddr_in6*)addr)->sin6_port = htons(port);	
+		}
+		else
+		{    
+			((struct sockaddr_in*)addr)->sin_port = htons(port);
+		}
     }
 
     int nResult = bind(sockfd, addr, addrlen);
 
-    struct sockaddr_in addr_in;
-    socklen_t addr_in_len;
+	if (family == AF_INET6)
+	{
+		struct sockaddr_in6 addr_in6;
+		socklen_t addr_in6_len;
 
-    getsockname(sockfd, (sockaddr*)&addr_in, &addr_in_len);
-    port = ntohs(addr_in.sin_port);
+		getsockname(sockfd, (sockaddr*)&addr_in6, &addr_in6_len);
+		port = ntohs(addr_in6.sin6_port);
+	}
+	else
+	{
+		struct sockaddr_in addr_in;
+		socklen_t addr_in_len;
 
+		getsockname(sockfd, (sockaddr*)&addr_in, &addr_in_len);
+		port = ntohs(addr_in.sin_port);
+	}
+	
     DBG_PRINT(DBG_LEVEL_DEBUG, "Port %i\n", port);
 
     return nResult;

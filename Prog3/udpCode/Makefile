@@ -8,16 +8,16 @@
 # Usage: make rcopyMac	(if making on Mac)
 #
 # note - if you are moving between machine architectures you must first delete your .o files
-# Usage: make clean  (only deletes .o files)
 
 CC = gcc
-CFLAGS = -g -Wall -Werror
+CFLAGS = -g 
 
 LIBS += -lstdc++
-SRCS = $(shell ls *.cpp *.c 2> /dev/null | grep -v rcopy.c | grep -v server.c | grep -v rcopy.cpp | grep -v server.cpp)
-OBJS = $(shell ls *.cpp *.c 2> /dev/null | grep -v rcopy.c | grep -v server.c| sed s/\.c[p]*$$/\.o/ )
+SRCS = $(shell ls *.cpp *.c 2> /dev/null | grep -v rcopy.c | grep -v server.c | grep -v rcopy.cpp | grep -v server.cpp )
+OBJS = $(shell ls *.cpp *.c 2> /dev/null | grep -v rcopy.c | grep -v server.c | grep -v rcopy.cpp | grep -v server.cpp | sed s/\.c[p]*$$/\.o/ )
+HFILES = $(shell ls *.h 2> /dev/null)
 LIBNAME = $(shell ls *cpe464_32*.a 2> /dev/null | tail -n 1)
-FILE = 32
+FILE = #32
 
 #use the unique library names for each architecture
 ARCH = $(shell arch)
@@ -50,40 +50,41 @@ check_lib:
 		echo "Need to install the CPE464 library - see polyLearn"; \
 		echo ""; \
 		exit -1; fi
-	
+
 	
 echo:
 	@echo "CFLAGS: " $(CFLAGS)  
 	@echo "SRCS: $(SRCS)"
 	@echo "Objects: $(OBJS)"
+	@echo "HFILES: $(HFILES)"
 	@echo "LIBNAME: $(LIBNAME)"
 
-.cpp.o:
+%.o: %.cpp $(HFILES)
 	@echo "-------------------------------"
 	@echo "*** Building $@"
 	$(CC) -c $(CFLAGS)  $< -o $@ $(LIBS1)
 
-.c.o:
+%.o: %.c $(HFILES) 
 	@echo "-------------------------------"
 	@echo "*** Building $@"
 	$(CC) -c $(CFLAGS) $< -o $@ $(LIBS1)
 
-rcopy$(FILE): rcopy.c $(OBJS)
+rcopy$(FILE): rcopy.o  $(HFILES) $(OBJS)
 	@echo "-------------------------------"
 	@echo "*** Linking $@ with library: $(LIBNAME)... "
-	$(CC) $(CFLAGS) -o $@ rcopy.c $(OBJS) $(LIBNAME) $(LIBS)
+	$(CC) $(CFLAGS) -o $@ rcopy.o $(OBJS) $(LIBNAME) $(LIBS)
 	@echo "*** Linking Complete!"
 	@echo "-------------------------------"
 
-server$(FILE): server.c $(OBJS)
+server$(FILE): server.o $(HFILES) $(OBJS)
 	@echo "-------------------------------"
 	@echo "*** Linking $@ with library: $(LIBNAME)... "
-	$(CC) $(CFLAGS) -o $@ server.c $(OBJS) $(LIBNAME) $(LIBS)
+	$(CC) $(CFLAGS) -o $@ server.o $(OBJS) $(LIBNAME) $(LIBS)
 	@echo "*** Linking Complete!"
 	@echo "-------------------------------"
 
 # clean .o
-clean: 
+cleano: 
 	@echo "-------------------------------"
 	@echo "*** Cleaning Files..."
 	@echo "Deleting *.o's only"
@@ -91,7 +92,7 @@ clean:
 	@echo "-------------------------------"
 	
 # clean targets
-clean_all: 
+clean: 
 	@echo "-------------------------------"
 	@echo "*** Cleaning Files..."
 	@echo "Deleting *.o's and '$(FILE)' bit versions of rcopy and server"
