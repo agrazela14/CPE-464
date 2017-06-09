@@ -257,9 +257,11 @@ STATE readData(arguments *argu, int sockNum, struct sockaddr_in6 *server,
     int eofPack = 0;
     char dataBuf[sizeof(uint32_t)];
      
-    /*ssize_t bytesRecv = */recvfrom(sockNum, recvBuffer, HEADER_LEN + argu->bufSize, 0, 
+    ssize_t bytesRecv = recvfrom(sockNum, recvBuffer, HEADER_LEN + argu->bufSize, 0, 
      (struct sockaddr *)server, &addrLen); 
     ssize_t bytesSent;
+
+    printf("reading data, recv %d Bytes\n", (int)bytesRecv);
 
     uint32_t recvSeq = ntohl((uint32_t)recvBuffer[0]);
     uint16_t flag = (uint16_t)recvBuffer[8];
