@@ -263,6 +263,7 @@ STATE readData(arguments *argu, int sockNum, struct sockaddr_in6 *server,
     int dataLen = sizeof(uint32_t);
     int eofPack = 0;
     char dataBuf[sizeof(uint32_t)];
+    int sendflag = 5;
      
     ssize_t bytesRecv = recvfrom(sockNum, recvBuffer, HEADER_LEN + argu->bufSize, 0, 
      (struct sockaddr *)server, &addrLen); 
@@ -293,6 +294,7 @@ STATE readData(arguments *argu, int sockNum, struct sockaddr_in6 *server,
     //EOF packet, this one has the length as a 4 byte value right before the data
     if (flag == 10) {
         writeLen = (uint32_t)recvBuffer[HEADER_LEN]; 
+        sendflag = 11;
         eofPack = 1;
     }
 
@@ -303,14 +305,17 @@ STATE readData(arguments *argu, int sockNum, struct sockaddr_in6 *server,
         fflush(outFile);
         printf("wrote %d bytes, should be %d\n", writeBytes, writeLen);
 
-        packetLen = createPacket(buffer, *seqNum, 0, 5, dataLen, dataBuf); 
+        packetLen = createPacket(buffer, *seqNum, 0, sendflag, dataLen, dataBuf); 
         packetLen = createPacket(buffer, *seqNum, in_cksum((unsigned short *)buffer, packetLen), 
-         5, dataLen, dataBuf); 
+         sendflag, dataLen, dataBuf); 
         bytesSent = sendtoErr(sockNum, buffer, packetLen, 0, 
          (struct sockaddr *)server, addrLen); 
         (*seqNum) += 1;
 
         printf("Correct SeqNum, Sent Bytes %d\n", (int)bytesSent);
+        if (eofPack) {
+            return SHUTDOWN;
+        }
         return WAIT_FOR_DATA;
     }
 
@@ -352,6 +357,7 @@ STATE srejReadData(arguments *argu, int sockNum, struct sockaddr_in6 *server,
     char recvBuffer[MAXBUF + 1];
     int dataLen = sizeof(uint32_t);
     char dataBuf[sizeof(uint32_t)];
+    int sendFlag = 0;
      
     ssize_t bytesRecv = recvfrom(sockNum, recvBuffer, MAXBUF, 0, 
      (struct sockaddr *)server, &addrLen); 
@@ -364,22 +370,25 @@ STATE srejReadData(arguments *argu, int sockNum, struct sockaddr_in6 *server,
     printf("Waiting for SREJ'D packet %d, recv %d bytes, recv seqNum %d\n", *seqNum, (int)bytesRecv, recvSeq);
     
     //Flag is wrong for a data packet 
-    if (flag != 3) {
+    if (flag == 10) {
         //Probably supposed to do some other stuff, but w/e
-        return SHUTDOWN;
+        sendFlag = 11;
     }
 
     if (recvSeq == *seqNum) {
         fwrite(recvBuffer + HEADER_LEN, argu->bufSize, 1, outFile);
         (*seqNum) += 1;
 
-        packetLen = createPacket(buffer, *seqNum, 0, 5, dataLen, dataBuf); 
+        packetLen = createPacket(buffer, *seqNum, 0, sendFlag, dataLen, dataBuf); 
         packetLen = createPacket(buffer, *seqNum, in_cksum((unsigned short *)buffer, packetLen), 
-         5, dataLen, dataBuf); 
+         sendFlag, dataLen, dataBuf); 
         bytesSent = sendtoErr(sockNum, buffer, packetLen, 0, 
          (struct sockaddr *)server, addrLen); 
 
         printf("Sent Bytes %d\n", (int)bytesSent);
+        if (flag == 10) {
+            return SHUTDOWN;
+        }
         return WAIT_FOR_DATA;
     }
     else if (recvSeq < *seqNum) {

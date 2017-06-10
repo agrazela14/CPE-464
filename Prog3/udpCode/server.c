@@ -91,19 +91,17 @@ void processClient(int socketNum)
     //timeout.tv_usec = 0;
     int retFd;
     
-    buffer[0] = '\0';
-    while (buffer[0] != '.')
+    while (1)
     {
         FD_ZERO(&servFd);
         FD_SET(socketNum, &servFd);
 
         //recvfrom(socketNum, buffer, 0/*MAXBUF*/, 0, (struct sockaddr *) &client, &clientAddrLen);
         retFd = select(socketNum + 1, &servFd, NULL, NULL, NULL);
-        printf("retFd: %d\n", retFd); 
-
-        printClientIP(&client);
-        stateLoop(client, socketNum);
-
+        if (retFd > 0) {
+            printClientIP(&client);
+            stateLoop(client, socketNum);
+        }
         /*
         printf(" Len: %d %s\n", dataLen, buffer);
 
@@ -111,7 +109,6 @@ void processClient(int socketNum)
         sprintf(buffer, "bytes: %d", dataLen);
         safeSendto(socketNum, buffer, strlen(buffer)+1, 0, (struct sockaddr *) & client, clientAddrLen);
         */
-
     }
 }
 
@@ -149,16 +146,18 @@ void stateLoop(struct sockaddr_in6 client, int sockNum) {
             case (SHUTDOWN):
                 close(sockNum);
                 fclose(readFile);
-                free(fileBuf);
                 state = DONE;
                 break;
 
             case (DONE):
+                readFile = NULL;
+                //exit(0);
+                free(fileBuf);
                 break;
 
             default:
                 printf("Reached default in state loop, should not have happened\n");
-                state = SHUTDOWN;
+                exit(-1);
                 break;
 
         }
@@ -178,7 +177,7 @@ STATE initConnection(struct sockaddr_in6 *client, int sockNum) {
      in_cksum((unsigned short *)recvBuffer, recvBytes));
 
     if (recvBytes < 0) {
-        return SHUTDOWN;
+        return DONE;
     }
     
     if (in_cksum((unsigned short *)recvBuffer, recvBytes) != 0) {
