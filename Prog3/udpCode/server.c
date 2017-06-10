@@ -314,9 +314,11 @@ STATE sendData(struct sockaddr_in6 *client, int sockNum, packet *fileBuf,
         
     (*seqNum) += 1;
 
+    /*
     if (flag == 10) {
         return WAIT_FOR_EOF_ACK; 
     }
+    */
 
     /* If there's any data incoming, we need to read the acks*/
     int retFd = select(sockNum + 1, &fds, NULL, NULL, &timeout);
@@ -361,7 +363,7 @@ void fillFileBuffer(uint32_t newLow, windowSize *window, uint32_t winsize, uint3
     }
 
     else {
-        for (i = 0; i < windowShift; i++) {
+        for (i = 0; i < winsize - windowShift; i++) {
             memcpy(&packets[i], &packets[i + windowShift], sizeof(packet));
         } 
 
@@ -387,6 +389,7 @@ STATE waitForAck(struct sockaddr_in6 *client, int sockNum, uint32_t *seqNum, int
     socklen_t clientSize = sizeof(*client);
     int newLow;
     uint16_t flag = 3;
+    ssize_t recvBytes;
 
     fd_set fds;
     struct timeval timeout;
@@ -419,6 +422,9 @@ STATE waitForAck(struct sockaddr_in6 *client, int sockNum, uint32_t *seqNum, int
      
     if (readFds <= 0) {
         //Timed out, sending the lowest window packet again
+        //Try setting the seqNum here, we need to resend anything above anyways
+        *seqNum = fileBuf[0].sequence;
+
         int packetSize = createPacket(sendBuffer, *seqNum, 0, flag, 
          fileBuf[0].length, fileBuf[0].data); 
         packetSize = createPacket(sendBuffer, *seqNum, in_cksum((unsigned short *)sendBuffer,
@@ -433,16 +439,18 @@ STATE waitForAck(struct sockaddr_in6 *client, int sockNum, uint32_t *seqNum, int
     }
 
     while (readFds > 0) {
-        ssize_t recvBytes = recvfrom(sockNum, recvBuffer, HEADER_LEN + sizeof(uint32_t), 0, 
+        recvBytes = recvfrom(sockNum, recvBuffer, HEADER_LEN + sizeof(uint32_t), 0, 
          (struct sockaddr *)client, &clientSize); 
         readFds = select(sockNum + 1, &fds, NULL, NULL, &timeout); 
-
+        
+        /*
         if (in_cksum((unsigned short *)recvBuffer, recvBytes) != 0) {
             //Bad Checksum in acks 
             continue;
         }
+        */
 
-        newLow = htonl(*(uint32_t *)recvBuffer) + 1;
+        newLow = htonl(*(uint32_t *)recvBuffer);// + 1;
         
         //SREJ, reset the sequence Number
         if ((uint16_t)recvBuffer[8] == 6) {
@@ -450,6 +458,13 @@ STATE waitForAck(struct sockaddr_in6 *client, int sockNum, uint32_t *seqNum, int
             newLow = *seqNum;
         }
     }
+
+    if (in_cksum((unsigned short *)recvBuffer, recvBytes) != 0) {
+        //Bad Checksum in acks 
+        return waitForAck(client, sockNum, seqNum, ++attempts, 
+         window, bufLen, readFile, fileBuf);
+    }
+
 
     if ((uint16_t)recvBuffer[8] == 7) {
         //Resend the File Ok

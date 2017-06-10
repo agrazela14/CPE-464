@@ -18,7 +18,7 @@
 #include "networks.h"
 #include "cpe464.h"
 
-#define MAXBUF 80
+#define MAXBUF 255
 #define HEADER_LEN 10
 #define xstr(a) str(a)
 #define str(a) #a
@@ -382,9 +382,22 @@ STATE srejReadData(arguments *argu, int sockNum, struct sockaddr_in6 *server,
         printf("Sent Bytes %d\n", (int)bytesSent);
         return WAIT_FOR_DATA;
     }
+    else if (recvSeq < *seqNum) {
+        //Resend the SREJ
+
+        packetLen = createPacket(buffer, *seqNum/* - 1*/, 0, 6, dataLen, dataBuf); 
+        packetLen = createPacket(buffer, *seqNum/* - 1*/, in_cksum((unsigned short *)buffer, 
+         packetLen), 6, dataLen, dataBuf); 
+        bytesSent = sendtoErr(sockNum, buffer, packetLen, 0, 
+         (struct sockaddr *)server, addrLen); 
+
+        printf("SeqNum Low, Sent Bytes %d\n", (int)bytesSent);
+        return WAIT_FOR_SREJ_RESP;
+    }
     else {
         return WAIT_FOR_SREJ_RESP;
     }
+    printf("Shutting down in SREJ\n");
     return SHUTDOWN;
 }
 
