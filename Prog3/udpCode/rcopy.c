@@ -26,7 +26,7 @@
 typedef enum State STATE;
 
 enum State {
-    START, FILENAME, WAIT_FOR_DATA, WAIT_FOR_SREJ_RESP, SHUTDOWN, DONE
+    PRESTART, START, FILENAME, WAIT_FOR_DATA, WAIT_FOR_SREJ_RESP, SHUTDOWN, DONE
 }; 
 
 typedef struct {
@@ -42,6 +42,8 @@ typedef struct {
 void talkToServer(arguments *argu, int socketNum, struct sockaddr_in6 *server);
 
 void checkArgs(int argc, char * argv[], arguments *argu);
+
+STATE preStart(arguments *argu, int *sockNum, struct sockaddr_in6 *server);
 
 STATE initConnection(arguments *argu, int sockNum, struct sockaddr_in6 *server, int attempt);
 
@@ -78,7 +80,7 @@ int main (int argc, char *argv[])
 //Change this function to kick off communication
 void talkToServer(arguments *argu, int sockNum, struct sockaddr_in6 *server)
 {
-    STATE state = START;
+    STATE state = PRESTART;
     int seqNum = 0;
     FILE *writeFile = fopen(argu->destFile, "w+");
 
@@ -92,6 +94,9 @@ void talkToServer(arguments *argu, int sockNum, struct sockaddr_in6 *server)
     while (state != DONE) {
         
         switch (state) {
+            case PRESTART:
+                state = preStart(argu, &sockNum, server);
+                break;
             case START:
                 state = initConnection(argu, sockNum, server, 0);
                 break;
@@ -123,6 +128,28 @@ void talkToServer(arguments *argu, int sockNum, struct sockaddr_in6 *server)
                 break;
         }
     }
+}
+
+STATE preStart(arguments *argu, int *sockNum, struct sockaddr_in6 *server) {
+    unsigned int addrLen = sizeof(*server);
+    char buffer[MAXBUF + 1];
+    int packetLen = createPacket(buffer, 0, 0, 1, 0, ""); 
+    printf("Checksum = %d, packetLen: %d\n", in_cksum((unsigned short *)buffer, 10), packetLen);
+    packetLen = createPacket(buffer, 0, in_cksum((unsigned short*)buffer, packetLen), 1, 0, ""); 
+    ssize_t bytesSent = sendtoErr(*sockNum, buffer, packetLen, 0, 
+     (struct sockaddr *)server, addrLen); 
+    
+    if (*sockNum > 0) {
+        printf("Server connection closed\n");
+        close(*sockNum);
+    }
+    *sockNum = setupUdpClientToServer(server, argu->remoteMachine, argu->remotePort);
+    
+    if (*sockNum < 0) {
+        return SHUTDOWN;
+    }
+   
+    return START;
 }
 
 //Send the initial Packet

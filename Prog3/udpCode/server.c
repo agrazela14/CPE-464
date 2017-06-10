@@ -8,6 +8,7 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <sys/time.h>
+#include <sys/wait.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
@@ -35,15 +36,15 @@ enum State {
     START, FILENAME, SEND_DATA, WAIT_FOR_ACK, WAIT_FOR_EOF_ACK, SHUTDOWN, DONE
 };
 
-void processClient(int socketNum);
+void processClient(int socketNum, double error);
 
 void printClientIP(struct sockaddr_in6 * client);
 
 int checkArgs(int argc, char *argv[], double *error);
 
-void stateLoop(struct sockaddr_in6 client, int sockNum);
+void stateLoop(struct sockaddr_in6 *client, int sockNum);
 
-STATE initConnection(struct sockaddr_in6 *client, int sockNum);
+STATE initConnection(struct sockaddr_in6 *client, int *sockNum);
 
 STATE readFilename(struct sockaddr_in6 *client, int sockNum, 
  windowSize *window, uint32_t *bufLen, packet **fileBuf, FILE **readFile);
@@ -64,45 +65,84 @@ int createPacket(char *buffer, uint32_t seqNum, uint32_t checksum, uint16_t flag
 int main ( int argc, char *argv[]  )
 { 
     int socketNum = 0;              
-    //struct sockaddr_in6 client; // Can be either IPv4 or 6
+    struct sockaddr_in6 client; // Can be either IPv4 or 6
     int portNumber = 0;
     double error;
 
+    //portNumber = checkArgs(argc, argv, &error);
     portNumber = checkArgs(argc, argv, &error);
 
-    sendtoErr_init(error, DROP_ON, FLIP_ON, DEBUG_ON, RSEED_ON);
+    //sendtoErr_init(error, DROP_ON, FLIP_ON, DEBUG_ON, RSEED_ON);
         
     socketNum = udpServerSetup(portNumber);
 
-    processClient(socketNum);
+    processClient(socketNum, error);
 
     close(socketNum);
 }
 
-void processClient(int socketNum)
+void processClient(int socketNum, double error)
 {
     //int dataLen = 0; 
     char buffer[MAXBUF + 1];      
-    struct sockaddr_in6 client;     
-    //socklen_t clientAddrLen = sizeof(client); 
+    char recvBuf[MAXBUF + 1];      
+    struct sockaddr_in6 *client;     
+    socklen_t clientAddrLen = sizeof(*client); 
     fd_set servFd;
     //struct timeval timeout;
     //timeout.tv_sec = 0;
     //timeout.tv_usec = 0;
     int retFd;
+    pid_t pid = 0;
+    int status = 0;
+    int childSockNum = 0;
+    int recvBytes = 0;
     
     buffer[0] = '\0';
+    sendtoErr_init(error, DROP_ON, FLIP_ON, DEBUG_ON, RSEED_ON);
     while (buffer[0] != '.')
     {
         FD_ZERO(&servFd);
         FD_SET(socketNum, &servFd);
 
-        //recvfrom(socketNum, buffer, 0/*MAXBUF*/, 0, (struct sockaddr *) &client, &clientAddrLen);
+        //recvfrom(socketNum, buffer, MAXBUF, 0, (struct sockaddr *) &client, &clientAddrLen);
         retFd = select(socketNum + 1, &servFd, NULL, NULL, NULL);
-        printf("retFd: %d\n", retFd); 
 
-        printClientIP(&client);
-        stateLoop(client, socketNum);
+        if (retFd > 0) {
+            recvBytes = recvfrom(socketNum, recvBuf, MAXBUF, 0, 
+             (struct sockaddr *)(&client), &clientAddrLen);
+
+            if (recvBytes > 0) {
+                if ((pid = fork()) < 0) {
+                    fprintf(stderr, "Fork Error\n");
+                    exit(-1);
+                }
+                if (pid == 0) {
+                    printf("New Child\n");
+                    printClientIP(client);
+                    /*
+                    childSockNum = socket(AF_INET, SOCK_DGRAM, 0);
+                    if (childSockNum < 0) {
+                        printf("Failed to open new socket for child\n");
+                        exit(-1);
+                    }
+                    
+                    if (bind(childSockNum,(struct sockaddr *) client, sizeof(*client)) < 0) {
+                        perror("bind() call error");
+                        exit(-1);
+                    }
+                    */
+                    //This might help it stop losing packets to parent
+                    //close(socketkNum);
+                    stateLoop(client, socketNum);
+                    exit(0);
+                }
+            }
+            while(waitpid(-1, &status, WNOHANG) > 0) {
+                printf("Waited for a child\n");        
+            }
+        }
+
 
         /*
         printf(" Len: %d %s\n", dataLen, buffer);
@@ -115,7 +155,8 @@ void processClient(int socketNum)
     }
 }
 
-void stateLoop(struct sockaddr_in6 client, int sockNum) {
+void stateLoop(struct sockaddr_in6 *client, int sockNum) {
+    printf("entered the stateLoop\n");
     STATE state = START;
     uint32_t seqNum = 0;
     FILE *readFile = NULL; 
@@ -127,19 +168,19 @@ void stateLoop(struct sockaddr_in6 client, int sockNum) {
         
         switch (state) {
             case (START):
-                state = initConnection(&client, sockNum);
+                state = initConnection(client, &sockNum);
                 break;
                 
             case (FILENAME):
-                state = readFilename(&client, sockNum, &window, &bufLen, &fileBuf, &readFile);
+                state = readFilename(client, sockNum, &window, &bufLen, &fileBuf, &readFile);
                 break;
                 
             case (SEND_DATA):
-                state = sendData(&client, sockNum, fileBuf, &window, bufLen, &seqNum, readFile);
+                state = sendData(client, sockNum, fileBuf, &window, bufLen, &seqNum, readFile);
                 break;
 
             case (WAIT_FOR_ACK):
-                state = waitForAck(&client, sockNum, &seqNum, 0, &window, 
+                state = waitForAck(client, sockNum, &seqNum, 0, &window, 
                  bufLen, readFile, fileBuf);
                 break;
             /*
@@ -165,17 +206,27 @@ void stateLoop(struct sockaddr_in6 client, int sockNum) {
     }
 } 
 
-STATE initConnection(struct sockaddr_in6 *client, int sockNum) {
+STATE initConnection(struct sockaddr_in6 *client, int *sockNum) {
     char recvBuffer[MAXBUF + 1];
     char sendBuffer[MAXBUF + 1];
     socklen_t clientSize = sizeof(*client);
 
-    ssize_t recvBytes = recvfrom(sockNum, recvBuffer, 10, 0, 
+    ssize_t recvBytes = recvfrom(*sockNum, recvBuffer, 10, 0, 
      (struct sockaddr *)client, &clientSize); 
     printf("Start Recv'd Bytes: %d\n", (int)recvBytes);
     printf("checksum field on recv'd data %d\n", (uint32_t)recvBuffer[4]);
     printf("checksum calc on recv'd data: %d\n", 
      in_cksum((unsigned short *)recvBuffer, recvBytes));
+
+    *sockNum = socket(AF_INET, SOCK_DGRAM, 0);
+    if (*sockNum < 0) {
+        printf("Failed to open new socket for child\n");
+        exit(-1);
+    }
+    if (bind(*sockNum,(struct sockaddr *) client, sizeof(*client)) < 0) {
+        perror("bind() call error");
+        exit(-1);
+    }
 
     if (recvBytes < 0) {
         return SHUTDOWN;
@@ -189,7 +240,7 @@ STATE initConnection(struct sockaddr_in6 *client, int sockNum) {
     packetSize = createPacket(sendBuffer, 0, in_cksum((unsigned short *)sendBuffer, 10), 
      2, 0, ""); 
     
-    ssize_t bytesSent = sendtoErr(sockNum, sendBuffer, packetSize, 0, 
+    ssize_t bytesSent = sendtoErr(*sockNum, sendBuffer, packetSize, 0, 
      (struct sockaddr *)client, clientSize);
 
     printf("Bytes Sent: %d\n", (int)bytesSent);
