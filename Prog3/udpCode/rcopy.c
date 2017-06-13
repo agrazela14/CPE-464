@@ -43,9 +43,11 @@ void talkToServer(arguments *argu, int socketNum, struct sockaddr_in6 *server);
 
 void checkArgs(int argc, char * argv[], arguments *argu);
 
-STATE initConnection(arguments *argu, int sockNum, struct sockaddr_in6 *server, int attempt);
+STATE initConnection(arguments *argu, int sockNum, 
+ struct sockaddr_in6 *server, int attempt);
 
-STATE sendFilename(arguments *argu, int sockNum, struct sockaddr_in6 *server, int attempt);
+STATE sendFilename(arguments *argu, int sockNum, 
+ struct sockaddr_in6 *server, int attempt);
 
 STATE readData(arguments *argu, int sockNum, struct sockaddr_in6 *server, 
  int *seqNum, FILE *outFile);
@@ -53,22 +55,19 @@ STATE readData(arguments *argu, int sockNum, struct sockaddr_in6 *server,
 STATE srejReadData(arguments *argu, int sockNum, struct sockaddr_in6 *server, 
  int *seqNum, FILE *outFile);
 
-int createPacket(char *buffer, uint32_t seqNum, uint32_t checksum, uint16_t flag, 
- int dataSize, char *data);
-
-//int getData(char * buffer);
-
+int createPacket(char *buffer, uint32_t seqNum, uint32_t checksum, 
+uint16_t flag, int dataSize, char *data);
 
 int main (int argc, char *argv[])
  {
     int socketNum = 0;              
-    struct sockaddr_in6 server;     // Supports 4 and 6 but requires IPv6 struct
-    //int portNumber = 0;             // SockAddrLen used in recvfrom is sizeof(server)
+    struct sockaddr_in6 server; 
     arguments *argu = malloc(sizeof(arguments));
     
     checkArgs(argc, argv, argu);
     
-    socketNum = setupUdpClientToServer(&server, argu->remoteMachine, argu->remotePort);
+    socketNum = setupUdpClientToServer(&server, argu->remoteMachine, 
+     argu->remotePort);
     
     talkToServer(argu, socketNum, &server);
     free(argu);
@@ -105,7 +104,8 @@ void talkToServer(arguments *argu, int sockNum, struct sockaddr_in6 *server)
                 break;
 
             case WAIT_FOR_SREJ_RESP:
-                state = srejReadData(argu, sockNum, server, &seqNum, writeFile);
+                state = srejReadData(argu, sockNum, server, 
+                 &seqNum, writeFile);
                 break;
 
             case SHUTDOWN: //Do Cleanup
@@ -129,9 +129,8 @@ void talkToServer(arguments *argu, int sockNum, struct sockaddr_in6 *server)
 //Read for initial packet success
 //If response comes go on to filename state
 //If timeout and resend 10 times, go to Shutdown state
-STATE initConnection(arguments *argu, int sockNum, struct sockaddr_in6 *server, int attempt) {
-    //Apparently Checksum works by just putting a 0 in the field and running the function
-    //in_cksum() on the packet. 
+STATE initConnection(arguments *argu, int sockNum, 
+ struct sockaddr_in6 *server, int attempt) {
     unsigned int addrLen = sizeof(*server);
     char buffer[MAXBUF + 1];
     char recvBuffer[MAXBUF + 1];
@@ -144,8 +143,8 @@ STATE initConnection(arguments *argu, int sockNum, struct sockaddr_in6 *server, 
     /*End of Select Stuff*/
 
     int packetLen = createPacket(buffer, 0, 0, 1, 0, ""); 
-    printf("Checksum = %d, packetLen: %d\n", in_cksum((unsigned short *)buffer, 10), packetLen);
-    packetLen = createPacket(buffer, 0, in_cksum((unsigned short*)buffer, packetLen), 1, 0, ""); 
+    packetLen = createPacket(buffer, 0, 
+     in_cksum((unsigned short*)buffer, packetLen), 1, 0, ""); 
     ssize_t bytesSent = sendtoErr(sockNum, buffer, packetLen, 0, 
      (struct sockaddr *)server, addrLen); 
     
@@ -153,12 +152,9 @@ STATE initConnection(arguments *argu, int sockNum, struct sockaddr_in6 *server, 
     FD_SET(sockNum, &fds);
     retFd = select(sockNum + 1, &fds, NULL, NULL, &timeout);
     
-    printf("retFd: %d\n", retFd);
     if (retFd > 0) { 
         ssize_t bytesRecv = recvfrom(sockNum, recvBuffer, 10, 0, 
          (struct sockaddr *)server, &addrLen); 
-        printf("Recv Flag: %hd, bytes Recv: %d bytes Sent: %d\n", 
-         (short)recvBuffer[8], (int)bytesRecv, (int)bytesSent);
 
         if ((in_cksum((unsigned short *)recvBuffer, bytesRecv) != 0)) {
             return initConnection(argu, sockNum, server, ++attempt);
@@ -181,8 +177,8 @@ STATE initConnection(arguments *argu, int sockNum, struct sockaddr_in6 *server, 
 //If you get a response Go on to Wait_For_Data state
 //If you send fileName with no response 10 times go to Shutdown
 //If you get the badFileName response, print error and go to shutdown
-STATE sendFilename(arguments *argu, int sockNum, struct sockaddr_in6 *server, int attempt) {
-    //Apparently Checksum works by just putting a 0 in the field and running the function
+STATE sendFilename(arguments *argu, int sockNum, 
+ struct sockaddr_in6 *server, int attempt) {
     //in_cksum() on the packet. 
     unsigned int addrLen = sizeof(*server);
     char buffer[MAXBUF + 1];
@@ -199,29 +195,21 @@ STATE sendFilename(arguments *argu, int sockNum, struct sockaddr_in6 *server, in
     
     memcpy(dataBuf, &(argu->windowSize), sizeof(uint32_t)); 
     memcpy(dataBuf + sizeof(uint32_t), &(argu->bufSize), sizeof(uint32_t)); 
-    strcpy(dataBuf + 2 * sizeof(uint32_t), argu->srcFile);//, strlen(argu->srcFile)); 
-
-    printf("Filename argument: %s\n", argu->srcFile);
-    printf("Filename Being Sent: %s\n", dataBuf + 2 * sizeof(uint32_t));
+    strcpy(dataBuf + 2 * sizeof(uint32_t), argu->srcFile); 
 
     int packetLen = createPacket(buffer, 0, 0, 7, dataLen, dataBuf); 
-    packetLen = createPacket(buffer, 0, in_cksum((unsigned short *)buffer, packetLen), 
-     7, dataLen, dataBuf); 
+    packetLen = createPacket(buffer, 0, in_cksum((unsigned short *)buffer, 
+     packetLen), 7, dataLen, dataBuf); 
     ssize_t bytesSent = sendtoErr(sockNum, buffer, packetLen, 0, 
      (struct sockaddr *)server, addrLen); 
 
-    printf("Sent Filename, bytes: %d\n", (int)bytesSent);
-    
     FD_ZERO(&fds);
     FD_SET(sockNum, &fds);
     retFd = select(sockNum + 1, &fds, NULL, NULL, &timeout);
     
-    printf("retFd: %d\n", retFd);
     if (retFd > 0) { 
         ssize_t bytesRecv = recvfrom(sockNum, recvBuffer, HEADER_LEN, 0, 
          (struct sockaddr *)server, &addrLen); 
-        printf("Recv Flag: %hd, bytes Recv: %d bytes Sent: %d\n", 
-         (short)recvBuffer[8], (int)bytesRecv, (int)bytesSent);
 
         if ((in_cksum((unsigned short *)recvBuffer, bytesRecv) != 0)) {
             return sendFilename(argu, sockNum, server, ++attempt);
@@ -229,15 +217,11 @@ STATE sendFilename(arguments *argu, int sockNum, struct sockaddr_in6 *server, in
         //Use flag 8 for filename conf
         //Use flag 9 for bad filename 
         if ((short)recvBuffer[8] == 9) {
-            //This might need it's own state, or just wait for timeouts on the other end
-            //To figure out that the client is dead
             fprintf(stderr, "File could not be opened on server side\n");
             return SHUTDOWN;
         }
 
-        //Filename OK or data packet, should probably just remove filename ok and use data
         if (((short)recvBuffer[8] == 8) || ((short)recvBuffer[8] == 3)) {
-            printf("Got the fileOK\n");
             return WAIT_FOR_DATA;
         }
     }
@@ -265,33 +249,21 @@ STATE readData(arguments *argu, int sockNum, struct sockaddr_in6 *server,
     char dataBuf[sizeof(uint32_t)];
     int sendflag = 5;
      
-    ssize_t bytesRecv = recvfrom(sockNum, recvBuffer, HEADER_LEN + argu->bufSize, 0, 
-     (struct sockaddr *)server, &addrLen); 
+    ssize_t bytesRecv = recvfrom(sockNum, recvBuffer, 
+     HEADER_LEN + argu->bufSize, 0, (struct sockaddr *)server, &addrLen); 
     ssize_t bytesSent;
 
     if ((in_cksum((unsigned short *)recvBuffer, bytesRecv) != 0)) {
-        printf("Bad Checksum on data recv\n");
+        fprintf(stderr, "Bad Checksum on data recv\n");
         return WAIT_FOR_DATA;
     }
-
-    printf("reading data, recv %d Bytes\n", (int)bytesRecv);
 
     uint32_t recvSeq = ntohl(*(uint32_t *)recvBuffer);
     uint16_t flag = (uint16_t)recvBuffer[8];
     int packetLen = 0;
     uint32_t writeLen = argu->bufSize;
 
-    printf("Looking for packet with seqNum: %d\n", *seqNum);
-    
-    //Flag is wrong for a data packet 
-    /*
-    if (flag != 3) {
-        //Probably supposed to do some other stuff, but w/e
-        return SHUTDOWN;
-    }
-    */
-
-    //EOF packet, this one has the length as a 4 byte value right before the data
+    //EOF packet, this one has the length as 4 byte value right before the data
     if (flag == 10) {
         writeLen = (uint32_t)recvBuffer[HEADER_LEN]; 
         sendflag = 11;
@@ -300,19 +272,18 @@ STATE readData(arguments *argu, int sockNum, struct sockaddr_in6 *server,
 
     if (recvSeq == *seqNum) {
         //Ack at seqNum, then increment it
-        int writeBytes = fwrite(recvBuffer + HEADER_LEN + sizeof(uint32_t) * eofPack, 
-         1, writeLen, outFile);
+        int writeBytes = fwrite(recvBuffer + HEADER_LEN + 
+         sizeof(uint32_t) * eofPack, 1, writeLen, outFile);
         fflush(outFile);
-        printf("wrote %d bytes, should be %d\n", writeBytes, writeLen);
 
-        packetLen = createPacket(buffer, *seqNum, 0, sendflag, dataLen, dataBuf); 
-        packetLen = createPacket(buffer, *seqNum, in_cksum((unsigned short *)buffer, packetLen), 
+        packetLen = createPacket(buffer, *seqNum, 0, 
          sendflag, dataLen, dataBuf); 
+        packetLen = createPacket(buffer, *seqNum, in_cksum((unsigned short *)
+         buffer, packetLen), sendflag, dataLen, dataBuf); 
         bytesSent = sendtoErr(sockNum, buffer, packetLen, 0, 
          (struct sockaddr *)server, addrLen); 
         (*seqNum) += 1;
 
-        printf("Correct SeqNum, Sent Bytes %d\n", (int)bytesSent);
         if (eofPack) {
             return SHUTDOWN;
         }
@@ -321,27 +292,23 @@ STATE readData(arguments *argu, int sockNum, struct sockaddr_in6 *server,
 
     else if (recvSeq > *seqNum) {
     //Out of sequence packet, go into srej mode
-        printf("recvSeq: %d, seqNum: %d\n", recvSeq, *seqNum);
         packetLen = createPacket(buffer, *seqNum, 0, 6, dataLen, dataBuf); 
-        packetLen = createPacket(buffer, *seqNum, in_cksum((unsigned short *)buffer, packetLen), 
-         6, dataLen, dataBuf); 
+        packetLen = createPacket(buffer, *seqNum, in_cksum((unsigned short *)
+         buffer, packetLen), 6, dataLen, dataBuf); 
         bytesSent = sendtoErr(sockNum, buffer, packetLen, 0, 
          (struct sockaddr *)server, addrLen); 
 
-        printf("SeqNum High, Sent Bytes %d\n", (int)bytesSent);
         return WAIT_FOR_SREJ_RESP;
     }
 
     else if (recvSeq < *seqNum){
         //Send an SREJPacket for the current seqNum to kickstart the server
-        printf("recvSeq: %d, seqNum: %d\n", recvSeq, *seqNum);
-        packetLen = createPacket(buffer, *seqNum/* - 1*/, 0, 6, dataLen, dataBuf); 
-        packetLen = createPacket(buffer, *seqNum/* - 1*/, in_cksum((unsigned short *)buffer, 
-         packetLen), 6, dataLen, dataBuf); 
+        packetLen = createPacket(buffer, *seqNum, 0, 6, dataLen, dataBuf); 
+        packetLen = createPacket(buffer, *seqNum, in_cksum((unsigned short *)
+         buffer, packetLen), 6, dataLen, dataBuf); 
         bytesSent = sendtoErr(sockNum, buffer, packetLen, 0, 
          (struct sockaddr *)server, addrLen); 
 
-        printf("SeqNum Low, Sent Bytes %d\n", (int)bytesSent);
         return WAIT_FOR_SREJ_RESP;
     }
     return SHUTDOWN;
@@ -367,7 +334,6 @@ STATE srejReadData(arguments *argu, int sockNum, struct sockaddr_in6 *server,
     uint32_t recvSeq = ntohl(*(uint32_t *)recvBuffer);
     uint16_t flag = (uint16_t)recvBuffer[8];
     int packetLen = 0;
-    printf("Waiting for SREJ'D packet %d, recv %d bytes, recv seqNum %d\n", *seqNum, (int)bytesRecv, recvSeq);
     
     //Flag is wrong for a data packet 
     if (flag == 10) {
@@ -379,13 +345,13 @@ STATE srejReadData(arguments *argu, int sockNum, struct sockaddr_in6 *server,
         fwrite(recvBuffer + HEADER_LEN, argu->bufSize, 1, outFile);
         (*seqNum) += 1;
 
-        packetLen = createPacket(buffer, *seqNum, 0, sendFlag, dataLen, dataBuf); 
-        packetLen = createPacket(buffer, *seqNum, in_cksum((unsigned short *)buffer, packetLen), 
-         sendFlag, dataLen, dataBuf); 
+        packetLen = createPacket(buffer, *seqNum, 0, sendFlag, 
+         dataLen, dataBuf); 
+        packetLen = createPacket(buffer, *seqNum, in_cksum((unsigned short *)
+         buffer, packetLen), sendFlag, dataLen, dataBuf); 
         bytesSent = sendtoErr(sockNum, buffer, packetLen, 0, 
          (struct sockaddr *)server, addrLen); 
 
-        printf("Sent Bytes %d\n", (int)bytesSent);
         if (flag == 10) {
             return SHUTDOWN;
         }
@@ -394,34 +360,19 @@ STATE srejReadData(arguments *argu, int sockNum, struct sockaddr_in6 *server,
     else if (recvSeq < *seqNum) {
         //Resend the SREJ
 
-        packetLen = createPacket(buffer, *seqNum/* - 1*/, 0, 6, dataLen, dataBuf); 
-        packetLen = createPacket(buffer, *seqNum/* - 1*/, in_cksum((unsigned short *)buffer, 
-         packetLen), 6, dataLen, dataBuf); 
+        packetLen = createPacket(buffer, *seqNum, 0, 6, dataLen, dataBuf); 
+        packetLen = createPacket(buffer, *seqNum, in_cksum((unsigned short *)
+         buffer, packetLen), 6, dataLen, dataBuf); 
         bytesSent = sendtoErr(sockNum, buffer, packetLen, 0, 
          (struct sockaddr *)server, addrLen); 
 
-        printf("SeqNum Low, Sent Bytes %d\n", (int)bytesSent);
         return WAIT_FOR_SREJ_RESP;
     }
     else {
         return WAIT_FOR_SREJ_RESP;
     }
-    printf("Shutting down in SREJ\n");
     return SHUTDOWN;
 }
-
-/*
-int getData(char * buffer)
-{
-    // Read in the data
-    buffer[0] = '\0';
-    printf("Enter the data to send: ");
-    scanf("%" xstr(MAXBUF) "[^\n]%*[^\n]", buffer);
-    getc(stdin);  // eat the \n
-        
-    return (strlen(buffer)+ 1);
-}
-*/
 
 void checkArgs(int argc, char * argv[], arguments *argu)
 {
@@ -429,12 +380,12 @@ void checkArgs(int argc, char * argv[], arguments *argu)
     char *endptr;
     if (argc != 8)
     {
-        printf("usage: %s local-to-file remot-from-file window-size buffer-size error-percent host-name port-number \n", argv[0]);
+        printf("usage: %s local-to-file remote-from-file windowsize",argv[0]); 
+        printf("buffer-size error-percent host-name port-number \n");
         exit(1);
     }
     
     // Checks args and returns port number
-    //int portNumber = 0;
     strcpy(argu->destFile, argv[1]);
     strcpy(argu->srcFile, argv[2]);
     argu->windowSize = atoi(argv[3]);
@@ -445,8 +396,8 @@ void checkArgs(int argc, char * argv[], arguments *argu)
 }
 
 //Puts the packet into buffer, returns the length of the packet
-int createPacket(char *buffer, uint32_t seqNum, uint32_t checksum, uint16_t flag, 
- int dataSize, char *data) {
+int createPacket(char *buffer, uint32_t seqNum, uint32_t checksum, 
+ uint16_t flag, int dataSize, char *data) {
     int ndx = 0;
     seqNum = htonl(seqNum);
     memcpy(buffer, &seqNum, sizeof(uint32_t)); 
