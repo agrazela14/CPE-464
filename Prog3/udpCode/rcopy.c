@@ -3,6 +3,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <ctype.h>
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <sys/uio.h>
@@ -66,6 +67,7 @@ int main (int argc, char *argv[])
     
     checkArgs(argc, argv, argu);
     
+    close(3); 
     socketNum = setupUdpClientToServer(&server, argu->remoteMachine, 
      argu->remotePort);
     
@@ -268,6 +270,21 @@ STATE readData(arguments *argu, int sockNum, struct sockaddr_in6 *server,
         writeLen = (uint32_t)recvBuffer[HEADER_LEN]; 
         sendflag = 11;
         eofPack = 1;
+    }
+
+    for (int i = 0; i < writeLen; i++) {
+        /*
+        if (!(*(recvBuffer + i + HEADER_LEN + sizeof(uint32_t) * eofPack) >0
+            &&(*(recvBuffer + i + HEADER_LEN + 
+             sizeof(uint32_t) * eofPack) < 127))){
+        */
+        char cur = (*(recvBuffer + i + HEADER_LEN + 
+             sizeof(uint32_t) * eofPack)); 
+        if (!(isgraph(cur) || isspace(cur))) {
+            recvSeq = *seqNum + 1; 
+            printf("Failed because not graph or space %c\n", cur);
+            break;
+        }
     }
 
     if (recvSeq == *seqNum) {
